@@ -1,6 +1,6 @@
-# Maker Inventar · GitHub Pages PWA · v5
+# Maker Inventar · GitHub Pages PWA · v6
 
-Statisches Zusatz-Frontend für **Maker Inventar Docker v5**. Das Release-ZIP enthält ausschließlich statische App-Dateien: kein Flask, kein Python-Backend, keine SQLite-Datei, keine serverseitigen Secrets und keine `.github/`-Workflow-Infrastruktur. Bestehende Repository-Workflows bleiben beim ZIP-Import unangetastet.
+Statisches Zusatz-Frontend für **Maker Inventar Docker v6**. Das Release-ZIP enthält ausschließlich statische App-Dateien: kein Flask, kein Python-Backend, keine SQLite-Datei, keine serverseitigen Secrets und keine `.github/`-Workflow-Infrastruktur. Bestehende Repository-Workflows bleiben beim ZIP-Import unangetastet.
 
 ## Betriebsmodi
 
@@ -10,7 +10,7 @@ Statisches Zusatz-Frontend für **Maker Inventar Docker v5**. Das Release-ZIP en
 - strukturierte Fachdaten in IndexedDB (`maker-inventar-local`)
 - kein Backend, keine Backend-URL, kein Cloudflare-Token
 - nach erfolgreicher Installation/Cache-Befüllung weitgehend offline nutzbar
-- JSON-Backup dringend empfohlen, da Website-/PWA-Daten auf dem Gerät verloren gehen können
+- Vollbackup-ZIP mit Daten + Bauteilbildern dringend empfohlen, da Website-/PWA-Daten auf dem Gerät verloren gehen können
 
 ### Server
 
@@ -26,10 +26,11 @@ Ein Moduswechsel ändert **nur den aktiven Provider**. Es gibt keine automatisch
 
 - `index.html`, `app.css`, `app.js`: gemeinsame UI/Fachlogik
 - `providers.js`: `ServerProvider` und `LocalProvider`
-- `db.js`: IndexedDB-Versionierung und getrennte Konfigurationsdatenbank
+- `db.js`: IndexedDB-Versionierung, lokale Bild-Blobs und getrennte Konfigurationsdatenbank
+- `zip.js`: kleine lokale ZIP-Implementierung für bildfähige Vollbackups ohne CDN-Abhängigkeit
 - `config.json`: einziges Build-spezifisches, nicht geheimes Runtime-Profil
 
-Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. v4 ist Docker v5 ↔ Pages v5 kompatibel; Datenmodell und Backupformat bleiben zu v2 kompatibel.
+Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. Docker v6 ↔ Pages v6 gehören zum selben Release. v6 erweitert Datenmodell und Backupformat um optionale Bauteilbilder; alte Backup-Version 1 bleibt importierbar.
 
 ## Konfiguration
 
@@ -38,7 +39,7 @@ Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. v4 i
 ```json
 {
   "appName": "Maker Inventar",
-  "version": "v5",
+  "version": "v6",
   "buildTarget": "pages",
   "defaultMode": null,
   "defaultServerUrl": "https://api.example.com",
@@ -64,26 +65,25 @@ GitHub Pages erlaubt keine frei konfigurierbaren Response-Header. Deshalb enthä
 
 ## Backup / Restore
 
-Gemeinsames Format:
+Das gemeinsame Datenformat ist ab v6 Version 2. Die App exportiert standardmäßig ein **Vollbackup als ZIP**:
 
-```json
-{
-  "format": "maker-inventar-backup",
-  "version": 1,
-  "data": {}
-}
+```text
+maker-inventar-backup-….zip
+├── backup.json
+└── images/
+    └── <item-id>.jpg
 ```
 
-Enthalten sind Kategorien, Lagerorte, Bauteile, Projekte und Projektpositionen. Cloudflare- und App-Zugangsdaten werden nie exportiert.
+`backup.json` enthält Kategorien, Lagerorte, Bauteile, Projekte und Projektpositionen. Bilder liegen separat im ZIP, nicht als Base64 im JSON. Cloudflare- und App-Zugangsdaten werden nie exportiert. Alte reine JSON-Backups mit Formatversion 1 bleiben importierbar.
 
-Auf iPhone wird bei Dateiexport bevorzugt die Web Share API verwendet; ansonsten erfolgt ein Download-Fallback.
+Im Local-Modus werden Bilder als Blob in IndexedDB gespeichert. Beim Restore wird die Datei zuerst validiert, die Anzahl der Datensätze angezeigt und zwischen Ersetzen/Zusammenführen gewählt. Vor einem lokalen Ersetzen wird ein Vollbackup des aktuellen Zustands angeboten. Auf iPhone wird beim Export bevorzugt die Web Share API verwendet; ansonsten erfolgt ein Download-Fallback.
 
 ## Offline-App-Shell
 
 `service-worker.js` precacht mindestens:
 
 - `index.html`
-- `app.js`, `app.css`, `db.js`, `providers.js`
+- `app.js`, `app.css`, `db.js`, `providers.js`, `zip.js`
 - `config.json`
 - `manifest.webmanifest`
 - `offline.html`
@@ -97,7 +97,7 @@ Es gibt keine externen Laufzeit-CDNs. Nach erfolgreichem ersten Online-Lauf kann
 
 ## PWA-Update-Lifecycle
 
-Cache-Version: `maker-inventar-pwa-v5`.
+Cache-Version: `maker-inventar-pwa-v6`.
 
 - Browser/Client prüft auf neuen Service Worker
 - neue App-Shell wird im Hintergrund in einem neuen versionsbezogenen Cache vorbereitet
@@ -136,12 +136,12 @@ Das ZIP repräsentiert direkt das Repository-Root; keine zusätzliche Ordnerhül
 
 Im Repository unter **Settings → Pages** als Source **GitHub Actions** verwenden. Danach kann ein neues Release-ZIP ins Root des Repositories hochgeladen werden; der Import-Workflow übernimmt den Rest.
 
-## Bekannte Einschränkungen v5
+## Bekannte Einschränkungen v6
 
 - keine echte Offline-/Server-Synchronisationsengine
 - keine Konfliktauflösung nach Feldversionen; Merge arbeitet über stabile IDs
-- keine Barcode-/Kameraerfassung
-- keine Bilder/Datenblätter
+- keine Barcode-/QR-Erfassung
+- ein Hauptbild pro Bauteil; noch keine Bildergalerie oder Datenblattverwaltung
 - keine externe Lieferantensuche
 - iOS kann Website-Daten unter bestimmten Systembedingungen verwalten/löschen; regelmäßige lokale Backups bleiben wichtig
 
@@ -161,3 +161,9 @@ Für neue Repositories liegt `.gitignore.example` als Vorlage bei; die echte `.g
 ## UI-Feinschliff v5
 
 v5 ersetzt die bisherigen Unicode-Platzhalter in der Oberfläche durch ein vollständig lokales SVG-Iconset. Navigation, Status, Setup, Aktionen und Bauteil-Platzhalter verwenden nun eine einheitliche abgerundete Linienoptik ohne externe CDN-Abhängigkeit.
+
+## Bauteilbilder v6
+
+v6 unterstützt ein optionales Hauptbild pro Bauteil. Auf iPhone stehen getrennte Aktionen für Kamera und Fotobibliothek zur Verfügung. Das Bild wird vor Speicherung clientseitig auf maximal 1600 px Kantenlänge skaliert und als JPEG neu erzeugt; dadurch werden typische EXIF-Metadaten nicht übernommen. Thumbnails erscheinen in Inventar-, Knapp- und Projektansichten.
+
+Local Provider: Bild-Blob in IndexedDB `item_images`. Server Provider: Upload über `/api/items/<id>/image`; Cloudflare-Header werden wie bei anderen API-Aufrufen gesetzt. Bilder werden beim bewussten Local↔Server-Transfer mit übertragen.

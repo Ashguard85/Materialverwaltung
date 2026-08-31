@@ -1,4 +1,4 @@
-const APP_VERSION = 'v5';
+const APP_VERSION = 'v6';
 const CACHE_PREFIX = 'maker-inventar-pwa-';
 const CACHE_NAME = `${CACHE_PREFIX}${APP_VERSION}`;
 const APP_SHELL = [
@@ -8,6 +8,7 @@ const APP_SHELL = [
   './app.css',
   './db.js',
   './providers.js',
+  './zip.js',
   './config.json',
   './manifest.webmanifest',
   './offline.html',
@@ -48,6 +49,7 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/') || url.pathname === '/health') return;
   if (url.searchParams.has('network-check')) {
     event.respondWith(fetch(request, { cache: 'no-store' }));
     return;

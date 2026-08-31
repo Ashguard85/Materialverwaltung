@@ -1,10 +1,11 @@
 import { LocalProvider, ServerProvider, saveServerSettings, validateBackup } from './providers.js';
 import { getSecureSetting, clearServerCredentials } from './db.js';
+import { createZip, readZip } from './zip.js';
 
-const CLIENT_VERSION = 'v5';
+const CLIENT_VERSION = 'v6';
 
 const state = {
-  config: { appName: 'Maker Inventar', version: 'v5', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
+  config: { appName: 'Maker Inventar', version: 'v6', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
   mode: null,
   provider: null,
   data: { categories: [], locations: [], items: [], projects: [], project_items: [] },
@@ -12,6 +13,10 @@ const state = {
   lowOnly: false,
   swRegistration: null,
   updateReady: false,
+  imageUrls: new Map(),
+  itemImageChange: null,
+  itemPreviewUrl: '',
+  editingItemHadImage: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -58,6 +63,7 @@ function currentMode() {
 
 async function switchMode(mode, { firstRun = false } = {}) {
   if (!['local', 'server'].includes(mode)) return;
+  clearImageCache();
   localStorage.setItem('maker-inventar-mode', mode);
   state.mode = mode;
   state.provider = mode === 'local' ? new LocalProvider() : new ServerProvider(state.config);
@@ -124,6 +130,82 @@ function shortUnit(unit) {
   return value.toLowerCase() === 'stk' ? 'St' : value;
 }
 
+
+function itemThumbHtml(item, className = 'item-thumb') {
+  const hasImage = Boolean(item?.image_updated_at);
+  const attrs = hasImage ? ` data-item-image="${esc(item.id)}" data-image-version="${esc(item.image_updated_at)}"` : '';
+  return `<div class="${className}" aria-hidden="true"${attrs}><img alt=""${hasImage ? '' : ' class="hidden"'}><span class="thumb-fallback">${icon(itemIconName(item), 'thumb-icon')}</span></div>`;
+}
+
+function clearImageCache() {
+  for (const entry of state.imageUrls.values()) URL.revokeObjectURL(entry.url);
+  state.imageUrls.clear();
+}
+function invalidateItemImage(itemId) {
+  const entry = state.imageUrls.get(itemId);
+  if (entry) URL.revokeObjectURL(entry.url);
+  state.imageUrls.delete(itemId);
+}
+async function hydrateItemImages(root = document) {
+  const nodes = [...root.querySelectorAll('[data-item-image]')];
+  await Promise.all(nodes.map(async node => {
+    const itemId = node.dataset.itemImage;
+    const version = node.dataset.imageVersion || '';
+    const cached = state.imageUrls.get(itemId);
+    let url = cached?.key === `${state.mode}:${version}` ? cached.url : '';
+    if (!url) {
+      if (cached) { URL.revokeObjectURL(cached.url); state.imageUrls.delete(itemId); }
+      try {
+        const blob = await state.provider.getItemImage(itemId);
+        if (!blob) return;
+        url = URL.createObjectURL(blob);
+        state.imageUrls.set(itemId, { key: `${state.mode}:${version}`, url });
+      } catch { return; }
+    }
+    const img = node.querySelector('img');
+    if (img) { img.classList.remove('hidden'); img.src = url; node.classList.add('has-image'); }
+  }));
+}
+
+function revokeEditorPreview() {
+  if (state.itemPreviewUrl) URL.revokeObjectURL(state.itemPreviewUrl);
+  state.itemPreviewUrl = '';
+}
+function showItemPhotoBlob(blob) {
+  revokeEditorPreview();
+  const img = $('item-photo-img');
+  if (!blob) {
+    img.removeAttribute('src'); img.classList.add('hidden'); $('item-photo-placeholder').classList.remove('hidden');
+    return;
+  }
+  state.itemPreviewUrl = URL.createObjectURL(blob);
+  img.src = state.itemPreviewUrl; img.classList.remove('hidden'); $('item-photo-placeholder').classList.add('hidden');
+}
+async function processItemImage(file) {
+  if (!file || !file.type.startsWith('image/')) throw new Error('Bitte eine Bilddatei auswählen.');
+  if (file.size > 25 * 1024 * 1024) throw new Error('Das ausgewählte Bild ist zu groß.');
+  let source; let cleanup = () => {};
+  try {
+    source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    const url = URL.createObjectURL(file); cleanup = () => URL.revokeObjectURL(url);
+    source = await new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('Bild konnte nicht gelesen werden.')); img.src = url; });
+  }
+  const width = source.width || source.naturalWidth; const height = source.height || source.naturalHeight;
+  const scale = Math.min(1, 1600 / Math.max(width, height));
+  const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext('2d', { alpha: false }); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  if (source.close) source.close(); cleanup();
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+  if (!blob) throw new Error('Bild konnte nicht verarbeitet werden.');
+  return blob;
+}
+async function handleItemPhotoFile(file) {
+  try {
+    const blob = await processItemImage(file); state.itemImageChange = { action: 'set', blob }; showItemPhotoBlob(blob); $('item-photo-remove').classList.remove('hidden');
+  } catch (error) { toast(error.message); }
+}
+
 function itemSubtitle(item) {
   const parts = [];
   if (item.value_text) parts.push(item.value_text);
@@ -145,6 +227,7 @@ function renderAll() {
   renderSetupLists();
   fillSelects();
   showView(state.view);
+  hydrateItemImages();
 }
 
 function renderInventory() {
@@ -160,7 +243,7 @@ function renderInventory() {
     <div class="summary-card"><span class="summary-icon">${icon('warning')}</span><strong class="${low ? 'low' : ''}">${low}</strong><span>Knapp</span></div>`;
   $('item-list').innerHTML = items.map(item => `
     <article class="item-card">
-      <div class="item-thumb" aria-hidden="true">${icon(itemIconName(item), 'thumb-icon')}</div>
+      ${itemThumbHtml(item)}
       <button class="item-open" data-id="${esc(item.id)}" type="button">
         <div class="item-copy">
           <h3>${esc(item.name)}</h3>
@@ -171,6 +254,7 @@ function renderInventory() {
       <div class="qty ${isLow(item) ? 'low' : ''}"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong>${isLow(item) ? `<span class="low-indicator" title="Unter Mindestbestand">${icon('warning-fill')}</span>` : ''}</div>
     </article>`).join('');
   $('inventory-empty').classList.toggle('hidden', items.length > 0 || Boolean(query) || state.lowOnly);
+  hydrateItemImages($('item-list'));
 }
 function projectStats(project) {
   const lines = state.data.project_items.filter(row => row.project_id === project.id);
@@ -193,8 +277,9 @@ function renderProjects() {
 }
 function renderShortage() {
   const items = state.data.items.filter(isLow).sort((a,b) => (Number(a.quantity)-Number(a.min_quantity)) - (Number(b.quantity)-Number(b.min_quantity)));
-  $('shortage-list').innerHTML = items.map(item => `<article class="item-card"><div class="item-thumb" aria-hidden="true">${icon(itemIconName(item), 'thumb-icon')}</div><button class="item-open" data-id="${esc(item.id)}" type="button"><div class="item-copy"><h3>${esc(item.name)}</h3><p class="item-subtitle">${esc(itemSubtitle(item))}</p><div class="meta"><span class="meta-plain">${icon('storage', 'meta-icon')}${esc(locName(item.location_id))}</span><span class="meta-plain">Minimum ${nfmt(item.min_quantity)} ${esc(shortUnit(item.unit))}</span></div></div></button><div class="qty low"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong><span class="low-indicator">${icon('warning-fill')}</span></div></article>`).join('');
+  $('shortage-list').innerHTML = items.map(item => `<article class="item-card">${itemThumbHtml(item)}<button class="item-open" data-id="${esc(item.id)}" type="button"><div class="item-copy"><h3>${esc(item.name)}</h3><p class="item-subtitle">${esc(itemSubtitle(item))}</p><div class="meta"><span class="meta-plain">${icon('storage', 'meta-icon')}${esc(locName(item.location_id))}</span><span class="meta-plain">Minimum ${nfmt(item.min_quantity)} ${esc(shortUnit(item.unit))}</span></div></div></button><div class="qty low"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong><span class="low-indicator">${icon('warning-fill')}</span></div></article>`).join('');
   $('shortage-empty').classList.toggle('hidden', items.length > 0);
+  hydrateItemImages($('shortage-list'));
 }
 function renderSetupLists() {
   $('category-list').innerHTML = [...state.data.categories].sort((a,b)=>a.name.localeCompare(b.name,'de')).map(row => `<div class="manage-row"><span>${esc(row.name)}</span><button type="button" class="delete-category" data-id="${esc(row.id)}" aria-label="Kategorie löschen">${icon('close')}</button></div>`).join('');
@@ -220,7 +305,7 @@ function showView(view) {
   $('main').focus({ preventScroll: true });
 }
 
-function openItem(id = '') {
+async function openItem(id = '') {
   const item = id ? byId('items', id) : null;
   $('item-form').reset();
   $('item-id').value = item?.id || '';
@@ -239,7 +324,10 @@ function openItem(id = '') {
   $('item-notes').value = item?.notes || '';
   $('item-dialog-title').textContent = item ? 'Bauteil bearbeiten' : 'Bauteil anlegen';
   $('delete-item').classList.toggle('hidden', !item);
+  state.itemImageChange = null; state.editingItemHadImage = Boolean(item?.image_updated_at); revokeEditorPreview(); showItemPhotoBlob(null);
+  $('item-photo-remove').classList.toggle('hidden', !state.editingItemHadImage);
   $('item-dialog').showModal();
+  if (state.editingItemHadImage && item) { try { const blob = await state.provider.getItemImage(item.id); if ($('item-id').value === item.id && !state.itemImageChange) showItemPhotoBlob(blob); } catch { /* missing image falls back */ } }
 }
 
 function itemFormData() {
@@ -264,7 +352,10 @@ async function saveItem(event) {
   event.preventDefault();
   const id = $('item-id').value;
   try {
-    if (id) await state.provider.update('items', id, itemFormData()); else await state.provider.create('items', itemFormData());
+    const saved = id ? await state.provider.update('items', id, itemFormData()) : await state.provider.create('items', itemFormData());
+    if (state.itemImageChange?.action === 'set') await state.provider.setItemImage(saved.id, state.itemImageChange.blob);
+    else if (state.itemImageChange?.action === 'delete') await state.provider.deleteItemImage(saved.id);
+    invalidateItemImage(saved.id); state.itemImageChange = null; revokeEditorPreview();
     $('item-dialog').close();
     await loadData();
     toast('Bauteil gespeichert.');
@@ -316,11 +407,12 @@ function renderBom(projectId) {
     const item = byId('items', row.item_id);
     const enough = Number(item?.quantity || 0) >= Number(row.required_quantity || 0);
     return `<article class="project-part-row">
-      <div class="project-part-thumb" aria-hidden="true">${icon(itemIconName(item), 'thumb-icon')}</div>
+      ${itemThumbHtml(item, 'project-part-thumb')}
       <div class="project-part-copy"><strong>${esc(itemName(row.item_id))}</strong><small class="project-part-meta">${icon('storage', 'meta-icon')}${esc(item ? itemSubtitle(item) : 'Bauteil')}</small><div class="bom-actions"><button class="edit-bom" data-id="${esc(row.id)}" type="button" aria-label="Projektposition bearbeiten">${icon('edit')}</button><button class="delete-bom" data-id="${esc(row.id)}" type="button" aria-label="Projektposition entfernen">${icon('close')}</button></div></div>
       <div class="project-part-status ${enough ? '' : 'low'}"><span>${nfmt(item?.quantity || 0)} / ${nfmt(row.required_quantity)}</span><span class="${enough ? 'status-check' : 'status-warn'}">${enough ? icon('check') : icon('warning-fill')}</span></div>
     </article>`;
   }).join('') : '<div class="empty compact-empty"><p>Noch keine benötigten Bauteile hinterlegt.</p></div>';
+  hydrateItemImages($('project-bom-list'));
 }
 
 async function saveProject(event) {
@@ -385,7 +477,7 @@ async function deleteCurrentItem() {
   const id = $('item-id').value;
   if (!id) return;
   if (!await confirmAction('Bauteil löschen?', 'Das Bauteil wird auch aus Projektbedarfen entfernt. Diese Aktion kann nicht rückgängig gemacht werden.', { dangerLabel: 'Löschen' })) return;
-  try { await state.provider.delete('items', id); $('item-dialog').close(); await loadData(); toast('Bauteil gelöscht.'); } catch (error) { toast(error.message); }
+  try { await state.provider.delete('items', id); invalidateItemImage(id); revokeEditorPreview(); $('item-dialog').close(); await loadData(); toast('Bauteil gelöscht.'); } catch (error) { toast(error.message); }
 }
 
 async function deleteCurrentProject() {
@@ -455,19 +547,54 @@ function conflictText(preview) {
   return 'Keine Konflikte mit bestehenden IDs oder eindeutigen Zuordnungen erkannt.';
 }
 
-async function shareOrDownloadJson(backup, prefix = 'maker-inventar-backup') {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = new File([JSON.stringify(backup, null, 2)], `${prefix}-${stamp}.json`, { type: 'application/json' });
+async function shareOrDownloadFile(file, title = 'Maker Inventar Backup') {
   if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Maker Inventar Backup' }); return; } catch (error) { if (error.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file], title }); return; } catch (error) { if (error.name === 'AbortError') return; }
   }
-  const url = URL.createObjectURL(file);
-  const a = document.createElement('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  const url = URL.createObjectURL(file); const a = document.createElement('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
-
+function imageExtension(mime) { return mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg'; }
+async function makeFullBackup(provider, items, prefix = 'maker-inventar-backup') {
+  const backup = await provider.exportData(); backup.version = 2; backup.includes_images = true; backup.images = [];
+  const entries = [];
+  for (const item of items.filter(row => row.image_updated_at)) {
+    try {
+      const blob = await provider.getItemImage(item.id); if (!blob) continue;
+      const mime = blob.type || item.image_mime_type || 'image/jpeg'; const path = `images/${item.id}.${imageExtension(mime)}`;
+      backup.images.push({ item_id: item.id, path, mime_type: mime, updated_at: item.image_updated_at || new Date().toISOString() }); entries.push({ name: path, data: blob });
+    } catch { /* a missing image must not block the data backup */ }
+  }
+  entries.unshift({ name: 'backup.json', data: JSON.stringify(backup, null, 2) });
+  const zip = await createZip(entries); const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return new File([zip], `${prefix}-${stamp}.zip`, { type: 'application/zip' });
+}
+async function exportProviderBackup(provider, items, prefix = 'maker-inventar-backup') { const file = await makeFullBackup(provider, items, prefix); await shareOrDownloadFile(file); return file; }
 async function exportBackup() {
-  try { const backup = await state.provider.exportData(); await shareOrDownloadJson(backup); toast('Backup erstellt.'); } catch (error) { toast(error.message); }
+  try { await exportProviderBackup(state.provider, state.data.items); toast('Vollbackup mit Bildern erstellt.'); } catch (error) { toast(error.message); }
+}
+async function parseBackupFile(file) {
+  if (file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip') {
+    if (file.size > 250 * 1024 * 1024) throw new Error('Backup-ZIP ist zu groß.');
+    const entries = await readZip(file); const manifest = entries.get('backup.json'); if (!manifest) throw new Error('backup.json fehlt im ZIP.');
+    const backup = JSON.parse(new TextDecoder().decode(manifest)); validateBackup(backup); return { backup, entries };
+  }
+  const backup = JSON.parse(await file.text()); validateBackup(backup); return { backup, entries: null };
+}
+async function restoreBackupImages(provider, backup, entries) {
+  if (!entries || !Array.isArray(backup.images)) return 0;
+  let count = 0;
+  for (const info of backup.images) {
+    const data = entries.get(info.path); if (!data || !info.item_id) continue;
+    await provider.setItemImage(info.item_id, new Blob([data], { type: info.mime_type || 'image/jpeg' })); count++;
+  }
+  return count;
+}
+async function transferImages(source, target, sourceItems) {
+  let count = 0;
+  for (const item of sourceItems.filter(row => row.image_updated_at)) {
+    try { const blob = await source.getItemImage(item.id); if (blob) { await target.setItemImage(item.id, blob); count++; } } catch { /* individual missing images do not block transfer */ }
+  }
+  return count;
 }
 
 function chooseStrategy(title, text) {
@@ -485,44 +612,30 @@ function chooseStrategy(title, text) {
 
 async function importSelectedFile(file) {
   try {
-    const backup = JSON.parse(await file.text());
-    const counts = validateBackup(backup);
-    const preview = state.provider.previewImport ? await state.provider.previewImport(backup) : null;
-    const strategy = await chooseStrategy('Backup importieren?', `Validiertes Backup: ${backupCountsText(counts)}. ${conflictText(preview)} Vor einem Ersetzen wird im Server-Modus automatisch ein SQLite-Sicherheitsbackup erstellt.`);
+    const { backup, entries } = await parseBackupFile(file); const counts = validateBackup(backup); const preview = state.provider.previewImport ? await state.provider.previewImport(backup) : null;
+    const imageCount = Array.isArray(backup.images) ? backup.images.length : 0;
+    const strategy = await chooseStrategy('Backup importieren?', `Validiertes Backup: ${backupCountsText(counts)}${imageCount ? ` und ${imageCount} Bild(er)` : ''}. ${conflictText(preview)} Vor einem Ersetzen wird eine Sicherheitskopie angeboten.`);
     if (!strategy) return;
-    if (state.mode === 'local' && strategy === 'replace') {
-      const current = await new LocalProvider().exportData();
-      await shareOrDownloadJson(current, 'maker-inventar-vor-restore');
-    }
-    await state.provider.importData(backup, strategy);
-    await loadData(); toast('Import abgeschlossen.');
+    if (state.mode === 'local' && strategy === 'replace') { const local = new LocalProvider(); const current = await local.bootstrap(); await exportProviderBackup(local, current.items, 'maker-inventar-vor-restore'); }
+    await state.provider.importData(backup, strategy); const restored = await restoreBackupImages(state.provider, backup, entries);
+    clearImageCache(); await loadData(); toast(`Import abgeschlossen${restored ? ` · ${restored} Bild(er)` : ''}.`);
   } catch (error) { toast(error.message); }
 }
 
 async function transferLocalToServer() {
   try {
-    const local = new LocalProvider(); const server = new ServerProvider(state.config);
-    const backup = await local.exportData(); const counts = validateBackup(backup);
+    const local = new LocalProvider(); const server = new ServerProvider(state.config); const localData = await local.bootstrap(); const backup = await local.exportData(); const counts = validateBackup(backup); const imageCount = localData.items.filter(row => row.image_updated_at).length;
     await server.testConnection(); const preview = await server.previewImport(backup);
-    const strategy = await chooseStrategy('Lokale Daten auf Server übertragen?', `${backupCountsText(counts)} werden bewusst zum Server übertragen. ${conflictText(preview)} Keine automatische Synchronisation. Vor dem Server-Import erstellt das Backend ein SQLite-Backup.`);
-    if (!strategy) return;
-    await server.importData(backup, strategy);
-    if (state.mode === 'server') await loadData();
-    toast('Lokale Daten wurden auf den Server übertragen.');
+    const strategy = await chooseStrategy('Lokale Daten auf Server übertragen?', `${backupCountsText(counts)}${imageCount ? ` und ${imageCount} Bild(er)` : ''} werden bewusst zum Server übertragen. ${conflictText(preview)} Keine automatische Synchronisation.`);
+    if (!strategy) return; await server.importData(backup, strategy); const moved = await transferImages(local, server, localData.items); if (state.mode === 'server') { clearImageCache(); await loadData(); } toast(`Lokale Daten wurden übertragen${moved ? ` · ${moved} Bild(er)` : ''}.`);
   } catch (error) { toast(error.message); }
 }
-
 async function transferServerToLocal() {
   try {
-    const server = new ServerProvider(state.config); const local = new LocalProvider();
-    const backup = await server.exportData(); const counts = validateBackup(backup);
-    const preview = await local.previewImport(backup);
-    const strategy = await chooseStrategy('Serverdaten lokal übernehmen?', `${backupCountsText(counts)} werden in den lokalen Datenspeicher übernommen. ${conflictText(preview)} Bei Ersetzen wird vorher ein lokales Sicherheitsbackup exportiert.`);
-    if (!strategy) return;
-    if (strategy === 'replace') await shareOrDownloadJson(await local.exportData(), 'maker-inventar-lokal-vor-uebernahme');
-    await local.importData(backup, strategy);
-    if (state.mode === 'local') await loadData();
-    toast('Serverdaten wurden lokal übernommen.');
+    const server = new ServerProvider(state.config); const local = new LocalProvider(); const serverData = await server.bootstrap(); const backup = await server.exportData(); const counts = validateBackup(backup); const imageCount = serverData.items.filter(row => row.image_updated_at).length; const preview = await local.previewImport(backup);
+    const strategy = await chooseStrategy('Serverdaten lokal übernehmen?', `${backupCountsText(counts)}${imageCount ? ` und ${imageCount} Bild(er)` : ''} werden in den lokalen Datenspeicher übernommen. ${conflictText(preview)}`);
+    if (!strategy) return; if (strategy === 'replace') { const current = await local.bootstrap(); await exportProviderBackup(local, current.items, 'maker-inventar-lokal-vor-uebernahme'); }
+    await local.importData(backup, strategy); const moved = await transferImages(server, local, serverData.items); if (state.mode === 'local') { clearImageCache(); await loadData(); } toast(`Serverdaten wurden lokal übernommen${moved ? ` · ${moved} Bild(er)` : ''}.`);
   } catch (error) { toast(error.message); }
 }
 
@@ -591,6 +704,12 @@ function bindEvents() {
   $('search').addEventListener('input', renderInventory);
   $('filter-low').addEventListener('click', () => { state.lowOnly = !state.lowOnly; $('filter-low').setAttribute('aria-pressed', String(state.lowOnly)); renderInventory(); });
   $('item-form').addEventListener('submit', saveItem);
+  $('item-dialog').addEventListener('close', () => { state.itemImageChange = null; revokeEditorPreview(); });
+  $('item-photo-camera').addEventListener('click', () => $('item-photo-camera-input').click());
+  $('item-photo-library').addEventListener('click', () => $('item-photo-library-input').click());
+  $('item-photo-camera-input').addEventListener('change', async () => { const file = $('item-photo-camera-input').files?.[0]; if (file) await handleItemPhotoFile(file); $('item-photo-camera-input').value = ''; });
+  $('item-photo-library-input').addEventListener('change', async () => { const file = $('item-photo-library-input').files?.[0]; if (file) await handleItemPhotoFile(file); $('item-photo-library-input').value = ''; });
+  $('item-photo-remove').addEventListener('click', () => { state.itemImageChange = state.editingItemHadImage ? { action: 'delete' } : null; showItemPhotoBlob(null); $('item-photo-remove').classList.add('hidden'); });
   $('project-form').addEventListener('submit', saveProject);
   $('bom-form').addEventListener('submit', saveBom);
   $('delete-item').addEventListener('click', deleteCurrentItem);
@@ -607,7 +726,7 @@ function bindEvents() {
     }
     const dc = event.target.closest('.delete-category'); if (dc) manageDelete('categories', dc.dataset.id, 'Kategorie');
     const dl = event.target.closest('.delete-location'); if (dl) manageDelete('locations', dl.dataset.id, 'Lagerort');
-    const closer = event.target.closest('[data-close]'); if (closer) $(closer.dataset.close).close();
+    const closer = event.target.closest('[data-close]'); if (closer) { if (closer.dataset.close === 'item-dialog') { state.itemImageChange = null; revokeEditorPreview(); } $(closer.dataset.close).close(); }
   });
   $('category-form').addEventListener('submit', async event => { event.preventDefault(); try { await state.provider.create('categories', { name: $('new-category').value }); $('new-category').value=''; await loadData(); } catch(e){toast(e.message);} });
   $('location-form').addEventListener('submit', async event => { event.preventDefault(); try { await state.provider.create('locations', { name: $('new-location').value }); $('new-location').value=''; await loadData(); } catch(e){toast(e.message);} });

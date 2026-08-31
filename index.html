@@ -55,6 +55,8 @@
     <symbol id="i-resistor" viewBox="0 0 24 24"><path d="M2 12h4l2-3 3 6 3-6 2 3h6"/></symbol>
     <symbol id="i-capacitor" viewBox="0 0 24 24"><path d="M2 12h7M15 12h7M9 6v12M15 6v12"/></symbol>
     <symbol id="i-case" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 5v-1h10v1M8 10h8"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7.5h3l1.5-2h7l1.5 2h3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.5"/><path d="m5 17 4.5-4.5 3.2 3.2 2.3-2.3 4 3.6"/></symbol>
     <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4v-9.5Z"/><path d="M9 20v-6h6v6"/></symbol>
   </svg>
   <div id="app" class="app-shell">
@@ -165,7 +167,7 @@
             <div class="action-list settings-action-list">
               <button id="export-backup" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg></span><span>Backup exportieren</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
               <button id="import-backup" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg></span><span>Backup importieren</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
-              <input id="import-file" class="hidden" type="file" accept="application/json,.json">
+              <input id="import-file" class="hidden" type="file" accept="application/zip,.zip,application/json,.json">
               <button id="transfer-local-server" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cloud-upload"></use></svg></span><span>Lokale Daten auf Server übertragen</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
               <button id="transfer-server-local" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cloud-download"></use></svg></span><span>Serverdaten lokal übernehmen</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
             </div>
@@ -228,6 +230,23 @@
       <span class="sheet-grabber" aria-hidden="true"></span>
       <div class="modal-head span-2"><div><h2 id="item-dialog-title">Bauteil anlegen</h2><p class="modal-subtitle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cube"></use></svg><span>Inventar</span></p></div><button class="close-button" data-close="item-dialog" type="button" aria-label="Schließen"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg></button></div>
       <input id="item-id" type="hidden">
+      <section class="item-photo-editor span-2" aria-label="Bauteilbild">
+        <div id="item-photo-preview" class="item-photo-preview">
+          <span id="item-photo-placeholder" class="item-photo-placeholder"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-image"></use></svg></span>
+          <img id="item-photo-img" class="hidden" alt="Vorschau des Bauteilbilds">
+        </div>
+        <div class="item-photo-copy">
+          <strong>Bild</strong>
+          <small>Optional · wird vor dem Speichern verkleinert. Im lokalen Modus bleibt es nur auf diesem Gerät.</small>
+          <div class="photo-actions">
+            <button id="item-photo-camera" class="secondary-button compact-button" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#i-camera"></use></svg><span>Foto</span></button>
+            <button id="item-photo-library" class="secondary-button compact-button" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#i-image"></use></svg><span>Fotos</span></button>
+            <button id="item-photo-remove" class="text-button danger-text hidden" type="button">Entfernen</button>
+          </div>
+          <input id="item-photo-camera-input" class="hidden" type="file" accept="image/*" capture="environment">
+          <input id="item-photo-library-input" class="hidden" type="file" accept="image/*">
+        </div>
+      </section>
       <label class="span-2">Name<input id="item-name" type="text" maxlength="180" required placeholder="z. B. ESP32 DevKit V1"></label>
       <label>Kategorie<select id="item-category"></select></label>
       <label>Lagerort<select id="item-location"></select></label>
