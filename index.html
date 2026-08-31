@@ -16,14 +16,55 @@
   <script type="module" src="app.js"></script>
 </head>
 <body>
+  <svg class="svg-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></symbol>
+    <symbol id="i-device" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10 18.5h4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 2.8 8 4.4v9.6l-8 4.4-8-4.4V7.2l8-4.4Z"/><path d="m4.4 7.5 7.6 4.2 7.6-4.2M12 11.7v9.1"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z"/><path d="M3.5 9h17"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 24 24"><path d="M10.15 4.15 2.9 17a2.1 2.1 0 0 0 1.83 3.15h14.54A2.1 2.1 0 0 0 21.1 17L13.85 4.15a2.1 2.1 0 0 0-3.7 0Z"/><path d="M12 8.5v4.8M12 16.8h.01"/></symbol>
+    <symbol id="i-warning-fill" viewBox="0 0 24 24"><path d="M10.1 3.8 2.6 17.2a2.3 2.3 0 0 0 2 3.45h14.8a2.3 2.3 0 0 0 2-3.45L13.9 3.8a2.18 2.18 0 0 0-3.8 0Z" fill="currentColor" stroke="none"/><path d="M12 8.2v5.3M12 17h.01" stroke="#fff" stroke-width="2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3v-4h.1A1.7 1.7 0 0 0 4 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.46 3.7l.06.06A1.7 1.7 0 0 0 8.4 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2.3h4v.1A1.7 1.7 0 0 0 15 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.4a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
+    <symbol id="i-storage" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 9h17M9.5 13h5"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M4 5.5V11l8.3 8.3a2 2 0 0 0 2.8 0l4.2-4.2a2 2 0 0 0 0-2.8L11 4H5.5A1.5 1.5 0 0 0 4 5.5Z"/><circle cx="8" cy="8" r="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m6.5 12.5 3.5 3.5 7.5-8"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m7.5 12.3 3 3.1 6.3-6.8"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.5 12h17M12 3c2.2 2.4 3.4 5.4 3.4 9S14.2 18.6 12 21c-2.2-2.4-3.4-5.4-3.4-9S9.8 5.4 12 3Z"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2.8 19 6v5.2c0 4.8-2.8 8.2-7 10-4.2-1.8-7-5.2-7-10V6l7-3.2Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14.5v2"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M17 12v3M20 12v2"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M8 12l4 4 4-4"/><path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></symbol>
+    <symbol id="i-cloud-upload" viewBox="0 0 24 24"><path d="M7.5 18H6a4 4 0 0 1-.7-7.94A6.5 6.5 0 0 1 18 8.5a4.5 4.5 0 0 1 .5 8.97H17"/><path d="M12 20v-8M9 15l3-3 3 3"/></symbol>
+    <symbol id="i-cloud-download" viewBox="0 0 24 24"><path d="M7.5 18H6a4 4 0 0 1-.7-7.94A6.5 6.5 0 0 1 18 8.5a4.5 4.5 0 0 1 .5 8.97H17"/><path d="M12 12v8M9 17l3 3 3-3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10.5v6M12 7.5h.01"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m5 9 7 7 7-7"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+    <symbol id="i-sensor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></symbol>
+    <symbol id="i-display" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2.5"/><path d="M8 21h8M12 18v3M7 8h10v6H7z"/></symbol>
+    <symbol id="i-led" viewBox="0 0 24 24"><path d="M8 13a5 5 0 1 1 8 0c-1.2 1-1.8 2-1.8 3H9.8c0-1-.6-2-1.8-3Z"/><path d="M9.5 19h5M10.5 22h3M4 7l-2-1M20 7l2-1M6 3 4.8 1.2M18 3l1.2 1.2"/></symbol>
+    <symbol id="i-cable" viewBox="0 0 24 24"><path d="M7 4v7a5 5 0 0 0 10 0V8"/><path d="M4 4h6M5 1h4v6H5zM14 4h6M15 1h4v6h-4z"/></symbol>
+    <symbol id="i-resistor" viewBox="0 0 24 24"><path d="M2 12h4l2-3 3 6 3-6 2 3h6"/></symbol>
+    <symbol id="i-capacitor" viewBox="0 0 24 24"><path d="M2 12h7M15 12h7M9 6v12M15 6v12"/></symbol>
+    <symbol id="i-case" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 5v-1h10v1M8 10h8"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4v-9.5Z"/><path d="M9 20v-6h6v6"/></symbol>
+  </svg>
   <div id="app" class="app-shell">
     <header class="topbar">
       <div class="topbar-title-wrap">
         <h1 id="view-title">Inventar</h1>
       </div>
       <div class="topbar-actions">
-        <span id="mode-badge" class="badge mode-badge"><span class="badge-icon">▤</span><span>…</span></span>
-        <button id="quick-add" class="icon-button add-button" type="button" aria-label="Hinzufügen">＋</button>
+        <span id="mode-badge" class="badge mode-badge"><svg class="ui-icon badge-icon" aria-hidden="true" focusable="false"><use href="#i-server"></use></svg><span class="badge-label">…</span></span>
+        <button id="quick-add" class="icon-button add-button" type="button" aria-label="Hinzufügen"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button>
       </div>
     </header>
 
@@ -38,16 +79,16 @@
       <section id="view-inventory" class="view active" data-view="inventory">
         <div class="toolbar sticky-toolbar">
           <label class="search-field">
-            <span class="search-icon" aria-hidden="true">⌕</span>
+            <span class="search-icon" aria-hidden="true"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-search"></use></svg></span>
             <span class="sr-only">Inventar durchsuchen</span>
             <input id="search" type="search" placeholder="Suchen" autocomplete="off">
           </label>
-          <button id="filter-low" class="chip" type="button" aria-pressed="false"><span aria-hidden="true">≡</span> Knapp</button>
+          <button id="filter-low" class="chip" type="button" aria-pressed="false"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-filter"></use></svg><span>Knapp</span></button>
         </div>
         <div id="inventory-summary" class="summary-grid"></div>
         <div id="item-list" class="card-list inventory-list"></div>
         <div id="inventory-empty" class="empty hidden">
-          <div class="empty-icon">◇</div>
+          <div class="empty-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cube"></use></svg></div>
           <h2>Noch nichts erfasst</h2>
           <p>Starte mit einem ESP, Sensor, Widerstand oder Modul.</p>
           <button id="empty-add-item" class="primary-button" type="button">Erstes Bauteil anlegen</button>
@@ -60,11 +101,11 @@
             <p class="section-kicker">Projektplanung</p>
             <h2>Was kann ich schon bauen?</h2>
           </div>
-          <button id="add-project" class="round-secondary-button" type="button" aria-label="Projekt hinzufügen">＋</button>
+          <button id="add-project" class="round-secondary-button" type="button" aria-label="Projekt hinzufügen"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button>
         </div>
         <div id="project-list" class="card-list project-list"></div>
         <div id="projects-empty" class="empty hidden">
-          <div class="empty-icon">▱</div>
+          <div class="empty-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-folder"></use></svg></div>
           <h2>Noch keine Projekte</h2>
           <p>Lege ein Projekt an und hinterlege die benötigten Teile.</p>
         </div>
@@ -79,7 +120,7 @@
         </div>
         <div id="shortage-list" class="card-list inventory-list"></div>
         <div id="shortage-empty" class="empty hidden">
-          <div class="empty-icon success">✓</div>
+          <div class="empty-icon success"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-check-circle"></use></svg></div>
           <h2>Alles ausreichend vorhanden</h2>
           <p>Kein Bauteil liegt aktuell unter seinem Mindestbestand.</p>
         </div>
@@ -105,11 +146,11 @@
           <section id="server-settings" class="settings-card">
             <h2>Serververbindung</h2>
             <div class="settings-form settings-rows">
-              <label class="settings-row"><span class="settings-row-icon">◎</span><span class="settings-label">Backend URL</span><input id="backend-url" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com"></label>
-              <label class="settings-row"><span class="settings-row-icon">↗</span><span class="settings-label">Docker-Weboberfläche</span><input id="docker-web-url" type="url" inputmode="url" autocomplete="url" placeholder="https://docker-app.example.com"></label>
-              <label class="settings-row"><span class="settings-row-icon">◇</span><span class="settings-label">Cloudflare Client ID</span><input id="cf-client-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-              <label class="settings-row"><span class="settings-row-icon">▣</span><span class="settings-label">Cloudflare Client Secret</span><input id="cf-client-secret" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Nicht erneut angezeigt"></label>
-              <label class="settings-row"><span class="settings-row-icon">◆</span><span class="settings-label">Optionaler App API Token</span><input id="app-api-token" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Nur falls aktiviert"></label>
+              <label class="settings-row"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-globe"></use></svg></span><span class="settings-label">Backend URL</span><input id="backend-url" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com"></label>
+              <label class="settings-row"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-external"></use></svg></span><span class="settings-label">Docker-Weboberfläche</span><input id="docker-web-url" type="url" inputmode="url" autocomplete="url" placeholder="https://docker-app.example.com"></label>
+              <label class="settings-row"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-shield"></use></svg></span><span class="settings-label">Cloudflare Client ID</span><input id="cf-client-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+              <label class="settings-row"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-lock"></use></svg></span><span class="settings-label">Cloudflare Client Secret</span><input id="cf-client-secret" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Nicht erneut angezeigt"></label>
+              <label class="settings-row"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-key"></use></svg></span><span class="settings-label">Optionaler App API Token</span><input id="app-api-token" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Nur falls aktiviert"></label>
             </div>
             <div class="button-row settings-buttons">
               <button id="save-server-settings" class="primary-button" type="button">Speichern</button>
@@ -122,11 +163,11 @@
             <h2>Backup & Daten</h2>
             <p id="local-data-warning" class="notice inline hidden">Lokale Daten liegen nur auf diesem Gerät. Beim Löschen der PWA, der Website-Daten oder bei Geräteverlust können sie verloren gehen.</p>
             <div class="action-list settings-action-list">
-              <button id="export-backup" class="settings-action" type="button"><span class="settings-row-icon">⇧</span><span>Backup exportieren</span><span class="chevron">›</span></button>
-              <button id="import-backup" class="settings-action" type="button"><span class="settings-row-icon">⇩</span><span>Backup importieren</span><span class="chevron">›</span></button>
+              <button id="export-backup" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg></span><span>Backup exportieren</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
+              <button id="import-backup" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg></span><span>Backup importieren</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
               <input id="import-file" class="hidden" type="file" accept="application/json,.json">
-              <button id="transfer-local-server" class="settings-action" type="button"><span class="settings-row-icon">↥</span><span>Lokale Daten auf Server übertragen</span><span class="chevron">›</span></button>
-              <button id="transfer-server-local" class="settings-action" type="button"><span class="settings-row-icon">↧</span><span>Serverdaten lokal übernehmen</span><span class="chevron">›</span></button>
+              <button id="transfer-local-server" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cloud-upload"></use></svg></span><span>Lokale Daten auf Server übertragen</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
+              <button id="transfer-server-local" class="settings-action" type="button"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cloud-download"></use></svg></span><span>Serverdaten lokal übernehmen</span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
             </div>
             <p class="muted compact-copy">Kein Fake-Sync: Ein Moduswechsel überträgt keine Daten automatisch.</p>
           </section>
@@ -138,7 +179,7 @@
                 <h3>Kategorien</h3>
                 <form id="category-form" class="inline-form">
                   <input id="new-category" type="text" maxlength="180" placeholder="z. B. Displays" required>
-                  <button class="round-secondary-button small" type="submit">＋</button>
+                  <button class="round-secondary-button small" type="submit" aria-label="Hinzufügen"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button>
                 </form>
                 <div id="category-list" class="manage-list"></div>
               </div>
@@ -146,7 +187,7 @@
                 <h3>Lagerorte</h3>
                 <form id="location-form" class="inline-form">
                   <input id="new-location" type="text" maxlength="180" placeholder="z. B. Box A3" required>
-                  <button class="round-secondary-button small" type="submit">＋</button>
+                  <button class="round-secondary-button small" type="submit" aria-label="Hinzufügen"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></button>
                 </form>
                 <div id="location-list" class="manage-list"></div>
               </div>
@@ -155,19 +196,19 @@
 
           <section class="settings-card">
             <h2>App-Version & Updates</h2>
-            <div class="version-row"><span><small>App-Version</small><strong id="app-version">–</strong></span><span id="update-status" class="status-pill">Wird geprüft …</span></div>
-            <button id="check-update" class="secondary-button full update-button" type="button">⇩&nbsp;&nbsp; Jetzt aktualisieren / prüfen</button>
-            <a id="docker-fallback" class="secondary-button full link-button hidden" href="#" target="_blank" rel="noopener">Docker-Weboberfläche öffnen</a>
+            <div class="version-row"><span class="version-info"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg><span><small>App-Version</small><strong id="app-version">–</strong></span></span><span id="update-status" class="status-pill">Wird geprüft …</span></div>
+            <button id="check-update" class="secondary-button full update-button" type="button"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg><span>Jetzt aktualisieren / prüfen</span></button>
+            <a id="docker-fallback" class="secondary-button full link-button hidden" href="#" target="_blank" rel="noopener"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-external"></use></svg><span>Docker-Weboberfläche öffnen</span></a>
           </section>
         </div>
       </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Hauptnavigation">
-      <button class="nav-button active" data-target="inventory" type="button"><span class="nav-icon">◇</span><small>Inventar</small></button>
-      <button class="nav-button" data-target="projects" type="button"><span class="nav-icon">▱</span><small>Projekte</small></button>
-      <button class="nav-button" data-target="shortage" type="button"><span class="nav-icon">△</span><small>Knapp</small></button>
-      <button class="nav-button" data-target="setup" type="button"><span class="nav-icon">⚙</span><small>Setup</small></button>
+      <button class="nav-button active" data-target="inventory" type="button"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cube"></use></svg></span><small>Inventar</small></button>
+      <button class="nav-button" data-target="projects" type="button"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-folder"></use></svg></span><small>Projekte</small></button>
+      <button class="nav-button" data-target="shortage" type="button"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-warning"></use></svg></span><small>Knapp</small></button>
+      <button class="nav-button" data-target="setup" type="button"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-settings"></use></svg></span><small>Setup</small></button>
     </nav>
   </div>
 
@@ -177,15 +218,15 @@
       <p class="eyebrow">Erster Start</p>
       <h2>Wie möchtest du die App verwenden?</h2>
       <p class="muted">Du kannst den Modus später ändern. Daten werden beim Wechsel nicht automatisch vermischt.</p>
-      <button id="first-local" class="choice-button" type="button"><span class="choice-icon">◇</span><span><strong>Auf diesem Gerät</strong><small>Kein Server nötig · Daten nur lokal</small></span><span class="chevron">›</span></button>
-      <button id="first-server" class="choice-button" type="button"><span class="choice-icon">▤</span><span><strong>Mit meinem Server</strong><small>Docker Backend über HTTPS verwenden</small></span><span class="chevron">›</span></button>
+      <button id="first-local" class="choice-button" type="button"><span class="choice-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-device"></use></svg></span><span><strong>Auf diesem Gerät</strong><small>Kein Server nötig · Daten nur lokal</small></span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
+      <button id="first-server" class="choice-button" type="button"><span class="choice-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-server"></use></svg></span><span><strong>Mit meinem Server</strong><small>Docker Backend über HTTPS verwenden</small></span><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
     </div>
   </dialog>
 
   <dialog id="item-dialog" class="modal sheet-modal">
     <form id="item-form" class="modal-card form-grid" method="dialog">
       <span class="sheet-grabber" aria-hidden="true"></span>
-      <div class="modal-head span-2"><div><h2 id="item-dialog-title">Bauteil anlegen</h2><p class="modal-subtitle">◇ Inventar</p></div><button class="close-button" data-close="item-dialog" type="button">×</button></div>
+      <div class="modal-head span-2"><div><h2 id="item-dialog-title">Bauteil anlegen</h2><p class="modal-subtitle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-cube"></use></svg><span>Inventar</span></p></div><button class="close-button" data-close="item-dialog" type="button" aria-label="Schließen"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg></button></div>
       <input id="item-id" type="hidden">
       <label class="span-2">Name<input id="item-name" type="text" maxlength="180" required placeholder="z. B. ESP32 DevKit V1"></label>
       <label>Kategorie<select id="item-category"></select></label>
@@ -207,9 +248,9 @@
   <dialog id="project-dialog" class="modal project-page-modal">
     <form id="project-form" class="project-page" method="dialog">
       <header class="project-page-header">
-        <button class="back-button" data-close="project-dialog" type="button" aria-label="Zurück">←</button>
+        <button class="back-button" data-close="project-dialog" type="button" aria-label="Zurück"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-back"></use></svg></button>
         <div><p class="eyebrow">Projekt</p><h2 id="project-dialog-title">Projekt</h2></div>
-        <span id="project-mode-badge" class="badge mini-badge">Server</span>
+        <span id="project-mode-badge" class="badge mini-badge"><svg class="ui-icon badge-icon" aria-hidden="true" focusable="false"><use href="#i-server"></use></svg><span class="badge-label">Server</span></span>
       </header>
       <input id="project-id" type="hidden">
 
@@ -218,8 +259,8 @@
         <div id="project-detail-progress" class="project-detail-progress"></div>
         <div id="project-bom-list" class="project-parts-list"></div>
         <div class="project-actions-card">
-          <button id="add-project-item" type="button" class="project-action"><span>＋</span><strong>Bauteil hinzufügen</strong><span class="chevron">›</span></button>
-          <button id="toggle-project-edit" type="button" class="project-action"><span>✎</span><strong>Projekt bearbeiten</strong><span class="chevron">›</span></button>
+          <button id="add-project-item" type="button" class="project-action"><span class="action-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></span><strong>Bauteil hinzufügen</strong><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
+          <button id="toggle-project-edit" type="button" class="project-action"><span class="action-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg></span><strong>Projekt bearbeiten</strong><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
         </div>
       </section>
 
@@ -239,7 +280,7 @@
   <dialog id="bom-dialog" class="modal sheet-modal">
     <form id="bom-form" class="modal-card form-grid" method="dialog">
       <span class="sheet-grabber" aria-hidden="true"></span>
-      <div class="modal-head span-2"><div><h2>Bauteil hinzufügen</h2><p class="modal-subtitle">▱ Projektbedarf</p></div><button class="close-button" data-close="bom-dialog" type="button">×</button></div>
+      <div class="modal-head span-2"><div><h2>Bauteil hinzufügen</h2><p class="modal-subtitle"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-folder"></use></svg><span>Projektbedarf</span></p></div><button class="close-button" data-close="bom-dialog" type="button" aria-label="Schließen"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg></button></div>
       <input id="bom-id" type="hidden">
       <input id="bom-project-id" type="hidden">
       <label class="span-2">Bauteil<select id="bom-item" required></select></label>

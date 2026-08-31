@@ -1,6 +1,6 @@
-# Maker Inventar · GitHub Pages PWA · v4
+# Maker Inventar · GitHub Pages PWA · v5
 
-Statisches Zusatz-Frontend für **Maker Inventar Docker v4**. Dieses Repository enthält ausschließlich statische Dateien und GitHub-Actions-Workflows: kein Flask, kein Python-Backend, keine SQLite-Datei und keine serverseitigen Secrets.
+Statisches Zusatz-Frontend für **Maker Inventar Docker v5**. Das Release-ZIP enthält ausschließlich statische App-Dateien: kein Flask, kein Python-Backend, keine SQLite-Datei, keine serverseitigen Secrets und keine `.github/`-Workflow-Infrastruktur. Bestehende Repository-Workflows bleiben beim ZIP-Import unangetastet.
 
 ## Betriebsmodi
 
@@ -29,7 +29,7 @@ Ein Moduswechsel ändert **nur den aktiven Provider**. Es gibt keine automatisch
 - `db.js`: IndexedDB-Versionierung und getrennte Konfigurationsdatenbank
 - `config.json`: einziges Build-spezifisches, nicht geheimes Runtime-Profil
 
-Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. v4 ist Docker v4 ↔ Pages v4 kompatibel; Datenmodell und Backupformat bleiben zu v2 kompatibel.
+Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. v4 ist Docker v5 ↔ Pages v5 kompatibel; Datenmodell und Backupformat bleiben zu v2 kompatibel.
 
 ## Konfiguration
 
@@ -38,7 +38,7 @@ Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. v4 i
 ```json
 {
   "appName": "Maker Inventar",
-  "version": "v4",
+  "version": "v5",
   "buildTarget": "pages",
   "defaultMode": null,
   "defaultServerUrl": "https://api.example.com",
@@ -97,7 +97,7 @@ Es gibt keine externen Laufzeit-CDNs. Nach erfolgreichem ersten Online-Lauf kann
 
 ## PWA-Update-Lifecycle
 
-Cache-Version: `maker-inventar-pwa-v4`.
+Cache-Version: `maker-inventar-pwa-v5`.
 
 - Browser/Client prüft auf neuen Service Worker
 - neue App-Shell wird im Hintergrund in einem neuen versionsbezogenen Cache vorbereitet
@@ -136,7 +136,7 @@ Das ZIP repräsentiert direkt das Repository-Root; keine zusätzliche Ordnerhül
 
 Im Repository unter **Settings → Pages** als Source **GitHub Actions** verwenden. Danach kann ein neues Release-ZIP ins Root des Repositories hochgeladen werden; der Import-Workflow übernimmt den Rest.
 
-## Bekannte Einschränkungen v4
+## Bekannte Einschränkungen v5
 
 - keine echte Offline-/Server-Synchronisationsengine
 - keine Konfliktauflösung nach Feldversionen; Merge arbeitet über stabile IDs
@@ -153,6 +153,11 @@ v2 richtet die iPhone-Oberfläche am freigegebenen Mockup-Stil aus: großer Head
 
 Release-ZIPs enthalten absichtlich **keine `.gitignore` und keine aktive `.github/`-Workflow-Infrastruktur**. Der Import-Workflow schließt beide Bereiche zusätzlich bei `rsync --delete` aus. Damit bleiben eigene Ignore-Regeln, Workflows und Repository-Einstellungen bei jedem App-Update unverändert.
 
-Für ein bestehendes Repository muss der v4-Import-/Deploy-Workflow **einmalig manuell** in `.github/workflows/` installiert bzw. der bisherige Import-Workflow ersetzt werden. Danach werden normale App-Releases nur noch als ZIP hochgeladen.
+Für ein bestehendes Repository muss der bestehende Import-/Deploy-Workflow **einmalig manuell** in `.github/workflows/` installiert bzw. der bisherige Import-Workflow ersetzt werden. Danach werden normale App-Releases nur noch als ZIP hochgeladen.
 
 Für neue Repositories liegt `.gitignore.example` als Vorlage bei; die echte `.gitignore` wird bewusst nicht als Release-Datei ausgeliefert.
+
+
+## UI-Feinschliff v5
+
+v5 ersetzt die bisherigen Unicode-Platzhalter in der Oberfläche durch ein vollständig lokales SVG-Iconset. Navigation, Status, Setup, Aktionen und Bauteil-Platzhalter verwenden nun eine einheitliche abgerundete Linienoptik ohne externe CDN-Abhängigkeit.

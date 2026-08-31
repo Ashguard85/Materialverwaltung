@@ -1,4 +1,4 @@
-const APP_VERSION = 'v4';
+const APP_VERSION = 'v5';
 const CACHE_PREFIX = 'maker-inventar-pwa-';
 const CACHE_NAME = `${CACHE_PREFIX}${APP_VERSION}`;
 const APP_SHELL = [

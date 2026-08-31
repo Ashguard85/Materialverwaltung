@@ -1,10 +1,10 @@
 import { LocalProvider, ServerProvider, saveServerSettings, validateBackup } from './providers.js';
 import { getSecureSetting, clearServerCredentials } from './db.js';
 
-const CLIENT_VERSION = 'v4';
+const CLIENT_VERSION = 'v5';
 
 const state = {
-  config: { appName: 'Maker Inventar', version: 'v2', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
+  config: { appName: 'Maker Inventar', version: 'v5', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
   mode: null,
   provider: null,
   data: { categories: [], locations: [], items: [], projects: [], project_items: [] },
@@ -18,6 +18,8 @@ const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
 const nfmt = (value) => Number(value || 0).toLocaleString('de-CH', { maximumFractionDigits: 3 });
 const labelStatus = { planned: 'Geplant', active: 'Aktiv', done: 'Fertig' };
+
+const icon = (name, extraClass = '') => `<svg class="ui-icon${extraClass ? ` ${extraClass}` : ''}" aria-hidden="true" focusable="false"><use href="#i-${name}"></use></svg>`;
 
 function toast(message) {
   const el = $('toast');
@@ -66,9 +68,18 @@ async function switchMode(mode, { firstRun = false } = {}) {
 
 function renderMode() {
   const label = state.mode === 'local' ? 'Lokal' : 'Server';
-  const badgeLabel = $('mode-badge').querySelector('span:last-child');
-  if (badgeLabel) badgeLabel.textContent = label; else $('mode-badge').textContent = label;
-  if ($('project-mode-badge')) $('project-mode-badge').textContent = label;
+  const badge = $('mode-badge');
+  const badgeLabel = badge.querySelector('.badge-label');
+  const badgeUse = badge.querySelector('use');
+  if (badgeLabel) badgeLabel.textContent = label;
+  if (badgeUse) badgeUse.setAttribute('href', state.mode === 'local' ? '#i-device' : '#i-server');
+  const projectBadge = $('project-mode-badge');
+  if (projectBadge) {
+    const projectLabel = projectBadge.querySelector('.badge-label');
+    const projectUse = projectBadge.querySelector('use');
+    if (projectLabel) projectLabel.textContent = label;
+    if (projectUse) projectUse.setAttribute('href', state.mode === 'local' ? '#i-device' : '#i-server');
+  }
   $('choose-local').classList.toggle('selected', state.mode === 'local');
   $('choose-server').classList.toggle('selected', state.mode === 'server');
   $('server-settings').classList.toggle('hidden', state.mode !== 'server');
@@ -95,17 +106,17 @@ function itemName(id) { return byId('items', id)?.name || 'Unbekanntes Bauteil';
 
 function isLow(item) { return Number(item.min_quantity) > 0 && Number(item.quantity) < Number(item.min_quantity); }
 
-function itemGlyph(item) {
+function itemIconName(item) {
   const hay = `${item?.name || ''} ${item?.value_text || ''} ${item ? catName(item.category_id) : ''}`.toLowerCase();
-  if (/esp|arduino|mikrocontroller|microcontroller/.test(hay)) return '▦';
-  if (/sensor|bme|temperatur|feuchte/.test(hay)) return '◈';
-  if (/oled|display|lcd/.test(hay)) return '▤';
-  if (/led|ws2812|neopixel/.test(hay)) return '✦';
-  if (/kabel|cable|dupont|jumper/.test(hay)) return '⌁';
-  if (/widerstand|resistor/.test(hay)) return 'Ω';
-  if (/kondensator|capacitor/.test(hay)) return '◒';
-  if (/gehäuse|mechanik|case|enclosure/.test(hay)) return '⬡';
-  return '◇';
+  if (/esp|arduino|mikrocontroller|microcontroller/.test(hay)) return 'chip';
+  if (/sensor|bme|temperatur|feuchte/.test(hay)) return 'sensor';
+  if (/oled|display|lcd/.test(hay)) return 'display';
+  if (/led|ws2812|neopixel/.test(hay)) return 'led';
+  if (/kabel|cable|dupont|jumper/.test(hay)) return 'cable';
+  if (/widerstand|resistor/.test(hay)) return 'resistor';
+  if (/kondensator|capacitor/.test(hay)) return 'capacitor';
+  if (/gehäuse|mechanik|case|enclosure/.test(hay)) return 'case';
+  return 'cube';
 }
 
 function shortUnit(unit) {
@@ -124,7 +135,8 @@ function itemSubtitle(item) {
 
 function tagHtml(item) {
   const tags = String(item.tags || '').split(',').map(v => v.trim()).filter(Boolean).slice(0, 2);
-  return tags.map(tag => `<span class="pill">#${esc(tag.replace(/^#/, ''))}</span>`).join('');
+  if (!tags.length) return '';
+  return `<span class="tag-group">${icon('tag', 'meta-icon')}${tags.map(tag => `<span class="pill">#${esc(tag.replace(/^#/, ''))}</span>`).join('')}</span>`;
 }
 function renderAll() {
   renderInventory();
@@ -143,20 +155,20 @@ function renderInventory() {
   items.sort((a,b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' }));
   const low = state.data.items.filter(isLow).length;
   $('inventory-summary').innerHTML = `
-    <div class="summary-card"><span class="summary-icon">◇</span><strong>${state.data.items.length}</strong><span>Teile</span></div>
-    <div class="summary-card"><span class="summary-icon">▱</span><strong>${state.data.categories.length}</strong><span>Kategorien</span></div>
-    <div class="summary-card"><span class="summary-icon">△</span><strong class="${low ? 'low' : ''}">${low}</strong><span>Knapp</span></div>`;
+    <div class="summary-card"><span class="summary-icon">${icon('cube')}</span><strong>${state.data.items.length}</strong><span>Teile</span></div>
+    <div class="summary-card"><span class="summary-icon">${icon('folder')}</span><strong>${state.data.categories.length}</strong><span>Kategorien</span></div>
+    <div class="summary-card"><span class="summary-icon">${icon('warning')}</span><strong class="${low ? 'low' : ''}">${low}</strong><span>Knapp</span></div>`;
   $('item-list').innerHTML = items.map(item => `
     <article class="item-card">
-      <div class="item-thumb" aria-hidden="true">${itemGlyph(item)}</div>
+      <div class="item-thumb" aria-hidden="true">${icon(itemIconName(item), 'thumb-icon')}</div>
       <button class="item-open" data-id="${esc(item.id)}" type="button">
         <div class="item-copy">
           <h3>${esc(item.name)}</h3>
           <p class="item-subtitle">${esc(itemSubtitle(item))}</p>
-          <div class="meta"><span class="meta-plain">▣ ${esc(locName(item.location_id))}</span>${tagHtml(item)}${!item.tags && item.part_number ? `<span class="meta-plain">${esc(item.part_number)}</span>` : ''}</div>
+          <div class="meta"><span class="meta-plain">${icon('storage', 'meta-icon')}${esc(locName(item.location_id))}</span>${tagHtml(item)}${!item.tags && item.part_number ? `<span class="meta-plain">${esc(item.part_number)}</span>` : ''}</div>
         </div>
       </button>
-      <div class="qty ${isLow(item) ? 'low' : ''}"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong>${isLow(item) ? '<span class="low-indicator" title="Unter Mindestbestand">▲</span>' : ''}</div>
+      <div class="qty ${isLow(item) ? 'low' : ''}"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong>${isLow(item) ? `<span class="low-indicator" title="Unter Mindestbestand">${icon('warning-fill')}</span>` : ''}</div>
     </article>`).join('');
   $('inventory-empty').classList.toggle('hidden', items.length > 0 || Boolean(query) || state.lowOnly);
 }
@@ -181,12 +193,12 @@ function renderProjects() {
 }
 function renderShortage() {
   const items = state.data.items.filter(isLow).sort((a,b) => (Number(a.quantity)-Number(a.min_quantity)) - (Number(b.quantity)-Number(b.min_quantity)));
-  $('shortage-list').innerHTML = items.map(item => `<article class="item-card"><div class="item-thumb" aria-hidden="true">${itemGlyph(item)}</div><button class="item-open" data-id="${esc(item.id)}" type="button"><div class="item-copy"><h3>${esc(item.name)}</h3><p class="item-subtitle">${esc(itemSubtitle(item))}</p><div class="meta"><span class="meta-plain">▣ ${esc(locName(item.location_id))}</span><span class="meta-plain">Minimum ${nfmt(item.min_quantity)} ${esc(shortUnit(item.unit))}</span></div></div></button><div class="qty low"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong><span class="low-indicator">▲</span></div></article>`).join('');
+  $('shortage-list').innerHTML = items.map(item => `<article class="item-card"><div class="item-thumb" aria-hidden="true">${icon(itemIconName(item), 'thumb-icon')}</div><button class="item-open" data-id="${esc(item.id)}" type="button"><div class="item-copy"><h3>${esc(item.name)}</h3><p class="item-subtitle">${esc(itemSubtitle(item))}</p><div class="meta"><span class="meta-plain">${icon('storage', 'meta-icon')}${esc(locName(item.location_id))}</span><span class="meta-plain">Minimum ${nfmt(item.min_quantity)} ${esc(shortUnit(item.unit))}</span></div></div></button><div class="qty low"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong><span class="low-indicator">${icon('warning-fill')}</span></div></article>`).join('');
   $('shortage-empty').classList.toggle('hidden', items.length > 0);
 }
 function renderSetupLists() {
-  $('category-list').innerHTML = [...state.data.categories].sort((a,b)=>a.name.localeCompare(b.name,'de')).map(row => `<div class="manage-row"><span>${esc(row.name)}</span><button type="button" class="delete-category" data-id="${esc(row.id)}" aria-label="Kategorie löschen">×</button></div>`).join('');
-  $('location-list').innerHTML = [...state.data.locations].sort((a,b)=>a.name.localeCompare(b.name,'de')).map(row => `<div class="manage-row"><span>${esc(row.name)}</span><button type="button" class="delete-location" data-id="${esc(row.id)}" aria-label="Lagerort löschen">×</button></div>`).join('');
+  $('category-list').innerHTML = [...state.data.categories].sort((a,b)=>a.name.localeCompare(b.name,'de')).map(row => `<div class="manage-row"><span>${esc(row.name)}</span><button type="button" class="delete-category" data-id="${esc(row.id)}" aria-label="Kategorie löschen">${icon('close')}</button></div>`).join('');
+  $('location-list').innerHTML = [...state.data.locations].sort((a,b)=>a.name.localeCompare(b.name,'de')).map(row => `<div class="manage-row"><span>${esc(row.name)}</span><button type="button" class="delete-location" data-id="${esc(row.id)}" aria-label="Lagerort löschen">${icon('close')}</button></div>`).join('');
 }
 
 function fillSelects() {
@@ -275,7 +287,11 @@ function openProject(id = '') {
   $('project-dialog-title').textContent = project ? 'Projekt' : 'Projekt anlegen';
   $('delete-project').classList.toggle('hidden', !project);
   $('project-bom-area').classList.add('hidden');
-  $('project-mode-badge').textContent = state.mode === 'local' ? 'Lokal' : 'Server';
+  const projectMode = $('project-mode-badge');
+  const projectModeLabel = projectMode.querySelector('.badge-label');
+  const projectModeUse = projectMode.querySelector('use');
+  if (projectModeLabel) projectModeLabel.textContent = state.mode === 'local' ? 'Lokal' : 'Server';
+  if (projectModeUse) projectModeUse.setAttribute('href', state.mode === 'local' ? '#i-device' : '#i-server');
   if (project) {
     $('project-display-name').textContent = project.name;
     setProjectEditMode(false, false);
@@ -300,9 +316,9 @@ function renderBom(projectId) {
     const item = byId('items', row.item_id);
     const enough = Number(item?.quantity || 0) >= Number(row.required_quantity || 0);
     return `<article class="project-part-row">
-      <div class="project-part-thumb" aria-hidden="true">${itemGlyph(item)}</div>
-      <div class="project-part-copy"><strong>${esc(itemName(row.item_id))}</strong><small>${esc(item ? itemSubtitle(item) : 'Bauteil')}</small><div class="bom-actions"><button class="edit-bom" data-id="${esc(row.id)}" type="button" aria-label="Projektposition bearbeiten">✎</button><button class="delete-bom" data-id="${esc(row.id)}" type="button" aria-label="Projektposition entfernen">×</button></div></div>
-      <div class="project-part-status ${enough ? '' : 'low'}"><span>${nfmt(item?.quantity || 0)} / ${nfmt(row.required_quantity)}</span><span class="${enough ? 'status-check' : 'status-warn'}">${enough ? '✓' : '!'}</span></div>
+      <div class="project-part-thumb" aria-hidden="true">${icon(itemIconName(item), 'thumb-icon')}</div>
+      <div class="project-part-copy"><strong>${esc(itemName(row.item_id))}</strong><small class="project-part-meta">${icon('storage', 'meta-icon')}${esc(item ? itemSubtitle(item) : 'Bauteil')}</small><div class="bom-actions"><button class="edit-bom" data-id="${esc(row.id)}" type="button" aria-label="Projektposition bearbeiten">${icon('edit')}</button><button class="delete-bom" data-id="${esc(row.id)}" type="button" aria-label="Projektposition entfernen">${icon('close')}</button></div></div>
+      <div class="project-part-status ${enough ? '' : 'low'}"><span>${nfmt(item?.quantity || 0)} / ${nfmt(row.required_quantity)}</span><span class="${enough ? 'status-check' : 'status-warn'}">${enough ? icon('check') : icon('warning-fill')}</span></div>
     </article>`;
   }).join('') : '<div class="empty compact-empty"><p>Noch keine benötigten Bauteile hinterlegt.</p></div>';
 }
