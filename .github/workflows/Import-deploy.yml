@@ -1,4 +1,4 @@
-name: Import ZIP release
+name: Import ZIP and deploy Pages
 
 on:
   push:
@@ -9,9 +9,11 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
-  group: maker-inventar-docker-import
+  group: maker-inventar-pages-import
   cancel-in-progress: false
 
 jobs:
@@ -114,3 +116,35 @@ jobs:
           fi
           git commit -m 'Import ZIP release [skip ci]'
           git push
+
+  deploy:
+    needs: import
+    if: needs.import.result == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - name: Build static Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.gitignore' \
+            --exclude='README.md' \
+            --exclude='*.zip' \
+            --exclude='_site/' \
+            ./ _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
