@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f7f8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Maker Inventar">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https:; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <title>Maker Inventar</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/favicon.png" type="image/png">
+  <link rel="stylesheet" href="app.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div class="topbar-title-wrap">
+        <h1 id="view-title">Inventar</h1>
+      </div>
+      <div class="topbar-actions">
+        <span id="mode-badge" class="badge mode-badge"><span class="badge-icon">▤</span><span>…</span></span>
+        <button id="quick-add" class="icon-button add-button" type="button" aria-label="Hinzufügen">＋</button>
+      </div>
+    </header>
+
+    <div id="hosting-warning" class="notice hidden" role="status">App-Hosting momentan nicht erreichbar. Die lokal installierte Version wird verwendet.</div>
+    <div id="update-banner" class="notice update hidden" role="status">
+      <span>Neue App-Version ist vorbereitet.</span>
+      <button id="apply-update" type="button" class="text-button">Jetzt aktualisieren</button>
+    </div>
+    <div id="connection-warning" class="notice warning hidden" role="status"></div>
+
+    <main id="main" class="content" tabindex="-1">
+      <section id="view-inventory" class="view active" data-view="inventory">
+        <div class="toolbar sticky-toolbar">
+          <label class="search-field">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <span class="sr-only">Inventar durchsuchen</span>
+            <input id="search" type="search" placeholder="Suchen" autocomplete="off">
+          </label>
+          <button id="filter-low" class="chip" type="button" aria-pressed="false"><span aria-hidden="true">≡</span> Knapp</button>
+        </div>
+        <div id="inventory-summary" class="summary-grid"></div>
+        <div id="item-list" class="card-list inventory-list"></div>
+        <div id="inventory-empty" class="empty hidden">
+          <div class="empty-icon">◇</div>
+          <h2>Noch nichts erfasst</h2>
+          <p>Starte mit einem ESP, Sensor, Widerstand oder Modul.</p>
+          <button id="empty-add-item" class="primary-button" type="button">Erstes Bauteil anlegen</button>
+        </div>
+      </section>
+
+      <section id="view-projects" class="view" data-view="projects">
+        <div class="section-head hero-section-head">
+          <div>
+            <p class="section-kicker">Projektplanung</p>
+            <h2>Was kann ich schon bauen?</h2>
+          </div>
+          <button id="add-project" class="round-secondary-button" type="button" aria-label="Projekt hinzufügen">＋</button>
+        </div>
+        <div id="project-list" class="card-list project-list"></div>
+        <div id="projects-empty" class="empty hidden">
+          <div class="empty-icon">▱</div>
+          <h2>Noch keine Projekte</h2>
+          <p>Lege ein Projekt an und hinterlege die benötigten Teile.</p>
+        </div>
+      </section>
+
+      <section id="view-shortage" class="view" data-view="shortage">
+        <div class="section-head hero-section-head">
+          <div>
+            <p class="section-kicker">Mindestbestand</p>
+            <h2>Fehlt bald etwas?</h2>
+          </div>
+        </div>
+        <div id="shortage-list" class="card-list inventory-list"></div>
+        <div id="shortage-empty" class="empty hidden">
+          <div class="empty-icon success">✓</div>
+          <h2>Alles ausreichend vorhanden</h2>
+          <p>Kein Bauteil liegt aktuell unter seinem Mindestbestand.</p>
+        </div>
+      </section>
+
+      <section id="view-setup" class="view" data-view="setup">
+        <div class="setup-stack">
+          <section class="settings-card">
+            <h2>Betriebsmodus</h2>
+            <div class="mode-choice" role="radiogroup" aria-label="Betriebsmodus">
+              <button id="choose-local" class="mode-card" type="button">
+                <span class="radio-dot" aria-hidden="true"></span>
+                <span class="mode-copy"><strong>Auf diesem Gerät</strong><small>Daten nur lokal auf diesem iPhone</small></span>
+              </button>
+              <button id="choose-server" class="mode-card" type="button">
+                <span class="radio-dot" aria-hidden="true"></span>
+                <span class="mode-copy"><strong>Mit meinem Server</strong><small>Docker Backend über HTTPS</small></span>
+              </button>
+            </div>
+            <p id="mode-explanation" class="muted compact-copy"></p>
+          </section>
+
+          <section id="server-settings" class="settings-card">
+            <h2>Serververbindung</h2>
+            <div class="settings-form settings-rows">
+              <label class="settings-row"><span class="settings-row-icon">◎</span><span class="settings-label">Backend URL</span><input id="backend-url" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com"></label>
+              <label class="settings-row"><span class="settings-row-icon">↗</span><span class="settings-label">Docker-Weboberfläche</span><input id="docker-web-url" type="url" inputmode="url" autocomplete="url" placeholder="https://docker-app.example.com"></label>
+              <label class="settings-row"><span class="settings-row-icon">◇</span><span class="settings-label">Cloudflare Client ID</span><input id="cf-client-id" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+              <label class="settings-row"><span class="settings-row-icon">▣</span><span class="settings-label">Cloudflare Client Secret</span><input id="cf-client-secret" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Nicht erneut angezeigt"></label>
+              <label class="settings-row"><span class="settings-row-icon">◆</span><span class="settings-label">Optionaler App API Token</span><input id="app-api-token" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="Nur falls aktiviert"></label>
+            </div>
+            <div class="button-row settings-buttons">
+              <button id="save-server-settings" class="primary-button" type="button">Speichern</button>
+              <button id="test-server" class="secondary-button" type="button">Verbindung testen</button>
+            </div>
+            <button id="clear-server-settings" class="danger-link" type="button">Dieses Gerät abmelden / Zugangsdaten löschen</button>
+          </section>
+
+          <section class="settings-card">
+            <h2>Backup & Daten</h2>
+            <p id="local-data-warning" class="notice inline hidden">Lokale Daten liegen nur auf diesem Gerät. Beim Löschen der PWA, der Website-Daten oder bei Geräteverlust können sie verloren gehen.</p>
+            <div class="action-list settings-action-list">
+              <button id="export-backup" class="settings-action" type="button"><span class="settings-row-icon">⇧</span><span>Backup exportieren</span><span class="chevron">›</span></button>
+              <button id="import-backup" class="settings-action" type="button"><span class="settings-row-icon">⇩</span><span>Backup importieren</span><span class="chevron">›</span></button>
+              <input id="import-file" class="hidden" type="file" accept="application/json,.json">
+              <button id="transfer-local-server" class="settings-action" type="button"><span class="settings-row-icon">↥</span><span>Lokale Daten auf Server übertragen</span><span class="chevron">›</span></button>
+              <button id="transfer-server-local" class="settings-action" type="button"><span class="settings-row-icon">↧</span><span>Serverdaten lokal übernehmen</span><span class="chevron">›</span></button>
+            </div>
+            <p class="muted compact-copy">Kein Fake-Sync: Ein Moduswechsel überträgt keine Daten automatisch.</p>
+          </section>
+
+          <section class="settings-card">
+            <h2>Kategorien & Lagerorte</h2>
+            <div class="two-columns manage-columns">
+              <div>
+                <h3>Kategorien</h3>
+                <form id="category-form" class="inline-form">
+                  <input id="new-category" type="text" maxlength="180" placeholder="z. B. Displays" required>
+                  <button class="round-secondary-button small" type="submit">＋</button>
+                </form>
+                <div id="category-list" class="manage-list"></div>
+              </div>
+              <div>
+                <h3>Lagerorte</h3>
+                <form id="location-form" class="inline-form">
+                  <input id="new-location" type="text" maxlength="180" placeholder="z. B. Box A3" required>
+                  <button class="round-secondary-button small" type="submit">＋</button>
+                </form>
+                <div id="location-list" class="manage-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-card">
+            <h2>App-Version & Updates</h2>
+            <div class="version-row"><span><small>App-Version</small><strong id="app-version">–</strong></span><span id="update-status" class="status-pill">Wird geprüft …</span></div>
+            <button id="check-update" class="secondary-button full update-button" type="button">⇩&nbsp;&nbsp; Jetzt aktualisieren / prüfen</button>
+            <a id="docker-fallback" class="secondary-button full link-button hidden" href="#" target="_blank" rel="noopener">Docker-Weboberfläche öffnen</a>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Hauptnavigation">
+      <button class="nav-button active" data-target="inventory" type="button"><span class="nav-icon">◇</span><small>Inventar</small></button>
+      <button class="nav-button" data-target="projects" type="button"><span class="nav-icon">▱</span><small>Projekte</small></button>
+      <button class="nav-button" data-target="shortage" type="button"><span class="nav-icon">△</span><small>Knapp</small></button>
+      <button class="nav-button" data-target="setup" type="button"><span class="nav-icon">⚙</span><small>Setup</small></button>
+    </nav>
+  </div>
+
+  <dialog id="first-run-dialog" class="modal first-run-modal">
+    <div class="modal-card first-run-card">
+      <span class="sheet-grabber" aria-hidden="true"></span>
+      <p class="eyebrow">Erster Start</p>
+      <h2>Wie möchtest du die App verwenden?</h2>
+      <p class="muted">Du kannst den Modus später ändern. Daten werden beim Wechsel nicht automatisch vermischt.</p>
+      <button id="first-local" class="choice-button" type="button"><span class="choice-icon">◇</span><span><strong>Auf diesem Gerät</strong><small>Kein Server nötig · Daten nur lokal</small></span><span class="chevron">›</span></button>
+      <button id="first-server" class="choice-button" type="button"><span class="choice-icon">▤</span><span><strong>Mit meinem Server</strong><small>Docker Backend über HTTPS verwenden</small></span><span class="chevron">›</span></button>
+    </div>
+  </dialog>
+
+  <dialog id="item-dialog" class="modal sheet-modal">
+    <form id="item-form" class="modal-card form-grid" method="dialog">
+      <span class="sheet-grabber" aria-hidden="true"></span>
+      <div class="modal-head span-2"><div><h2 id="item-dialog-title">Bauteil anlegen</h2><p class="modal-subtitle">◇ Inventar</p></div><button class="close-button" data-close="item-dialog" type="button">×</button></div>
+      <input id="item-id" type="hidden">
+      <label class="span-2">Name<input id="item-name" type="text" maxlength="180" required placeholder="z. B. ESP32 DevKit V1"></label>
+      <label>Kategorie<select id="item-category"></select></label>
+      <label>Lagerort<select id="item-location"></select></label>
+      <label>Bestand<input id="item-quantity" type="number" min="0" step="any" inputmode="decimal" value="1" required></label>
+      <label>Mindestbestand<input id="item-min" type="number" min="0" step="any" inputmode="decimal" value="0"></label>
+      <label>Einheit<input id="item-unit" type="text" maxlength="20" value="Stk"></label>
+      <label>Wert / Variante<input id="item-value" type="text" maxlength="120" placeholder="10 kΩ, BME280 …"></label>
+      <label>Hersteller<input id="item-manufacturer" type="text" maxlength="180"></label>
+      <label>Teilenummer<input id="item-part-number" type="text" maxlength="180"></label>
+      <label>Gehäuse / Package<input id="item-package" type="text" maxlength="80" placeholder="0603, DIP-8 …"></label>
+      <label class="span-2">Tags<input id="item-tags" type="text" maxlength="500" placeholder="esp32, i2c, 3v4"></label>
+      <label class="span-2">Quelle / Link<input id="item-source-url" type="url" inputmode="url" maxlength="1000"></label>
+      <label class="span-2">Notizen<textarea id="item-notes" rows="3" maxlength="5000" placeholder="Zusätzliche Informationen (optional)"></textarea></label>
+      <div class="modal-actions span-2"><button id="delete-item" class="danger-button hidden" type="button">Löschen</button><span class="spacer"></span><button class="secondary-button" data-close="item-dialog" type="button">Abbrechen</button><button class="primary-button" type="submit">Speichern</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="project-dialog" class="modal project-page-modal">
+    <form id="project-form" class="project-page" method="dialog">
+      <header class="project-page-header">
+        <button class="back-button" data-close="project-dialog" type="button" aria-label="Zurück">←</button>
+        <div><p class="eyebrow">Projekt</p><h2 id="project-dialog-title">Projekt</h2></div>
+        <span id="project-mode-badge" class="badge mini-badge">Server</span>
+      </header>
+      <input id="project-id" type="hidden">
+
+      <section id="project-overview" class="project-overview hidden">
+        <h3 id="project-display-name" class="project-display-name"></h3>
+        <div id="project-detail-progress" class="project-detail-progress"></div>
+        <div id="project-bom-list" class="project-parts-list"></div>
+        <div class="project-actions-card">
+          <button id="add-project-item" type="button" class="project-action"><span>＋</span><strong>Bauteil hinzufügen</strong><span class="chevron">›</span></button>
+          <button id="toggle-project-edit" type="button" class="project-action"><span>✎</span><strong>Projekt bearbeiten</strong><span class="chevron">›</span></button>
+        </div>
+      </section>
+
+      <section id="project-edit-fields" class="project-edit-fields">
+        <h3>Projekt bearbeiten</h3>
+        <div class="form-grid">
+          <label class="span-2">Name<input id="project-name" type="text" maxlength="180" required placeholder="z. B. Wetterstation Balkon"></label>
+          <label class="span-2">Status<select id="project-status"><option value="planned">Geplant</option><option value="active">Aktiv</option><option value="done">Fertig</option></select></label>
+          <label class="span-2">Notizen<textarea id="project-notes" rows="3" maxlength="5000"></textarea></label>
+        </div>
+        <div class="modal-actions"><button id="delete-project" class="danger-button hidden" type="button">Löschen</button><span class="spacer"></span><button id="cancel-project-edit" class="secondary-button hidden" type="button">Abbrechen</button><button class="primary-button" type="submit">Speichern</button></div>
+      </section>
+      <div id="project-bom-area" class="hidden"></div>
+    </form>
+  </dialog>
+
+  <dialog id="bom-dialog" class="modal sheet-modal">
+    <form id="bom-form" class="modal-card form-grid" method="dialog">
+      <span class="sheet-grabber" aria-hidden="true"></span>
+      <div class="modal-head span-2"><div><h2>Bauteil hinzufügen</h2><p class="modal-subtitle">▱ Projektbedarf</p></div><button class="close-button" data-close="bom-dialog" type="button">×</button></div>
+      <input id="bom-id" type="hidden">
+      <input id="bom-project-id" type="hidden">
+      <label class="span-2">Bauteil<select id="bom-item" required></select></label>
+      <label class="span-2">Benötigte Menge<input id="bom-quantity" type="number" min="0" step="any" inputmode="decimal" value="1" required></label>
+      <label class="span-2">Notiz<input id="bom-notes" type="text" maxlength="1000"></label>
+      <div class="modal-actions span-2"><button class="secondary-button" data-close="bom-dialog" type="button">Abbrechen</button><button class="primary-button" type="submit">Übernehmen</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="modal sheet-modal">
+    <div class="modal-card confirm-card">
+      <span class="sheet-grabber" aria-hidden="true"></span>
+      <p class="eyebrow">Bestätigung</p>
+      <h2 id="confirm-title">Bist du sicher?</h2>
+      <p id="confirm-text" class="muted"></p>
+      <div id="confirm-extra"></div>
+      <div class="modal-actions"><button id="confirm-cancel" class="secondary-button" type="button">Abbrechen</button><button id="confirm-ok" class="danger-button" type="button">Fortfahren</button></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
