@@ -1,0 +1,122 @@
+name: Import uploaded ZIP and deploy Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Find exactly one newly added ZIP
+        id: zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            mapfile -t zips < <(find . -maxdepth 1 -type f -name '*.zip' -printf '%f\n' | sort)
+          else
+            mapfile -t zips < <(git diff-tree --no-commit-id --name-only --diff-filter=A -r "$GITHUB_SHA" -- '*.zip' | sed 's#^./##')
+          fi
+          if [[ ${#zips[@]} -ne 1 ]]; then
+            printf 'Expected exactly one new root-level ZIP, found %s\n' "${#zips[@]}" >&2
+            printf '%s\n' "${zips[@]:-}" >&2
+            exit 1
+          fi
+          [[ -f "${zips[0]}" ]] || { echo "ZIP not found" >&2; exit 1; }
+          echo "path=${zips[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate archive structure and secret-like files
+        shell: python
+        env:
+          ZIP_PATH: ${{ steps.zip.outputs.path }}
+        run: |
+          import os, pathlib, zipfile
+          zpath = pathlib.Path(os.environ['ZIP_PATH'])
+          deny_names = {'id_rsa','id_ed25519','credentials.json','credentials.yml','credentials.yaml','secrets.json','secrets.yml','secrets.yaml'}
+          with zipfile.ZipFile(zpath) as z:
+              files = [n for n in z.namelist() if n and not n.endswith('/')]
+              if not files:
+                  raise SystemExit('Archive is empty')
+              top = {n.split('/')[0] for n in files}
+              if len(top) == 1 and all('/' in n for n in files):
+                  raise SystemExit('Archive has an extra top-level directory; ZIP must represent repository root directly')
+              for name in files:
+                  p = pathlib.PurePosixPath(name)
+                  if p.is_absolute() or '..' in p.parts or '.git' in p.parts:
+                      raise SystemExit(f'Unsafe path: {name}')
+                  lower = p.name.lower()
+                  if lower.startswith('.env') and lower != '.env.example':
+                      raise SystemExit(f'Secret-like environment file rejected: {name}')
+                  if lower in deny_names or lower.endswith(('.pem','.key','.p12','.pfx')):
+                      raise SystemExit(f'Secret-like file rejected: {name}')
+
+      - name: Extract and replace repository contents safely
+        shell: bash
+        env:
+          ZIP_PATH: ${{ steps.zip.outputs.path }}
+        run: |
+          set -euo pipefail
+          tmp="$RUNNER_TEMP/maker-inventar-import"
+          rm -rf "$tmp" && mkdir -p "$tmp"
+          unzip -q "$ZIP_PATH" -d "$tmp"
+          rm -f "$tmp/.github/workflows/import-zip.yml"
+          rm -f "$tmp/.gitignore"
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.gitignore' \
+            --exclude='.github/workflows/import-zip.yml' \
+            --exclude='*.zip' \
+            "$tmp/" ./
+          rm -f "$ZIP_PATH"
+
+      - name: Commit imported release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Nothing changed after import.'
+            exit 0
+          fi
+          git commit -m "Import ZIP release [skip ci]"
+          git push
+
+  deploy:
+    needs: import
+    if: needs.import.result == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - name: Build static artifact
+        shell: bash
+        run: |
+          mkdir -p _site
+          rsync -a --delete --exclude='.git/' --exclude='.gitignore' --exclude='.github/' --exclude='README.md' --exclude='*.zip' --exclude='_site/' ./ _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
