@@ -20,12 +20,14 @@ jobs:
   import:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    outputs:
+      skipped: ${{ steps.zip.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Find exactly one release ZIP
+      - name: Find exactly one newly added release ZIP
         id: zip
         shell: bash
         run: |
@@ -35,15 +37,23 @@ jobs:
           else
             mapfile -t zips < <(git diff-tree --no-commit-id --name-only --diff-filter=A -r "$GITHUB_SHA" -- '*.zip' | sed 's#^./##')
           fi
+
+          if [[ ${#zips[@]} -eq 0 && "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            echo 'No newly added ZIP in this commit; nothing to import.'
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [[ ${#zips[@]} -ne 1 ]]; then
-            printf 'Expected exactly one root-level release ZIP, found %s\n' "${#zips[@]}" >&2
+            printf 'Expected exactly one release ZIP, found %s\n' "${#zips[@]}" >&2
             printf '%s\n' "${zips[@]:-}" >&2
             exit 1
           fi
           [[ -f "${zips[0]}" ]] || { echo 'ZIP not found' >&2; exit 1; }
+          echo 'skip=false' >> "$GITHUB_OUTPUT"
           echo "path=${zips[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Validate release archive
+        if: steps.zip.outputs.skip != 'true'
         shell: python
         env:
           ZIP_PATH: ${{ steps.zip.outputs.path }}
@@ -65,8 +75,8 @@ jobs:
                   p = pathlib.PurePosixPath(name)
                   if p.is_absolute() or '..' in p.parts or '.git' in p.parts:
                       raise SystemExit(f'Unsafe path: {name}')
-                  if len(p.parts) >= 2 and p.parts[0] == '.github' and p.parts[1] == 'workflows':
-                      raise SystemExit(f'Active GitHub workflow files are repository infrastructure and are not allowed in release ZIPs: {name}')
+                  if p.parts and p.parts[0] == '.github':
+                      raise SystemExit(f'.github is repository infrastructure and is not allowed in release ZIPs: {name}')
                   lower = p.name.lower()
                   if lower == '.gitignore':
                       raise SystemExit('.gitignore is repository-owned and must not be shipped in a release ZIP')
@@ -76,6 +86,7 @@ jobs:
                       raise SystemExit(f'Secret-like file rejected: {name}')
 
       - name: Import app files while preserving repository infrastructure
+        if: steps.zip.outputs.skip != 'true'
         shell: bash
         env:
           ZIP_PATH: ${{ steps.zip.outputs.path }}
@@ -85,6 +96,8 @@ jobs:
           rm -rf "$tmp"
           mkdir -p "$tmp"
           unzip -q "$ZIP_PATH" -d "$tmp"
+
+          # Defense in depth; the validator above already rejects these.
           rm -rf "$tmp/.github"
           rm -f "$tmp/.gitignore"
 
@@ -95,7 +108,8 @@ jobs:
             --exclude='*.zip' \
             "$tmp/" ./
 
-          rm -f "$ZIP_PATH"
+          # Remove the uploaded ZIP and any stale root-level release ZIPs.
+          find . -maxdepth 1 -type f -name '*.zip' -delete
 
           if ! git diff --quiet -- .github .gitignore; then
             echo 'Refusing import: .github or .gitignore changed.' >&2
@@ -104,6 +118,7 @@ jobs:
           fi
 
       - name: Commit imported release
+        if: steps.zip.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -119,7 +134,7 @@ jobs:
 
   deploy:
     needs: import
-    if: needs.import.result == 'success'
+    if: needs.import.result == 'success' && needs.import.outputs.skipped != 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
