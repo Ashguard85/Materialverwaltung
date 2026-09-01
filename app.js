@@ -2,10 +2,10 @@ import { LocalProvider, ServerProvider, saveServerSettings, validateBackup } fro
 import { getSecureSetting, clearServerCredentials } from './db.js';
 import { createZip, readZip } from './zip.js';
 
-const CLIENT_VERSION = 'v6';
+const CLIENT_VERSION = 'v7';
 
 const state = {
-  config: { appName: 'Maker Inventar', version: 'v6', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
+  config: { appName: 'Maker Inventar', version: 'v7', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
   mode: null,
   provider: null,
   data: { categories: [], locations: [], items: [], projects: [], project_items: [] },
@@ -215,11 +215,6 @@ function itemSubtitle(item) {
   return parts.join(' · ') || 'Bauteil';
 }
 
-function tagHtml(item) {
-  const tags = String(item.tags || '').split(',').map(v => v.trim()).filter(Boolean).slice(0, 2);
-  if (!tags.length) return '';
-  return `<span class="tag-group">${icon('tag', 'meta-icon')}${tags.map(tag => `<span class="pill">#${esc(tag.replace(/^#/, ''))}</span>`).join('')}</span>`;
-}
 function renderAll() {
   renderInventory();
   renderProjects();
@@ -233,7 +228,7 @@ function renderAll() {
 function renderInventory() {
   const query = $('search').value.trim().toLowerCase();
   let items = [...state.data.items];
-  if (query) items = items.filter(item => [item.name, item.value_text, item.tags, item.part_number, item.manufacturer, catName(item.category_id), locName(item.location_id)].join(' ').toLowerCase().includes(query));
+  if (query) items = items.filter(item => [item.name, item.value_text, item.part_number, item.manufacturer, catName(item.category_id), locName(item.location_id)].join(' ').toLowerCase().includes(query));
   if (state.lowOnly) items = items.filter(isLow);
   items.sort((a,b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' }));
   const low = state.data.items.filter(isLow).length;
@@ -248,7 +243,7 @@ function renderInventory() {
         <div class="item-copy">
           <h3>${esc(item.name)}</h3>
           <p class="item-subtitle">${esc(itemSubtitle(item))}</p>
-          <div class="meta"><span class="meta-plain">${icon('storage', 'meta-icon')}${esc(locName(item.location_id))}</span>${tagHtml(item)}${!item.tags && item.part_number ? `<span class="meta-plain">${esc(item.part_number)}</span>` : ''}</div>
+          <div class="meta"><span class="meta-plain">${icon('storage', 'meta-icon')}${esc(locName(item.location_id))}</span>${item.part_number ? `<span class="meta-plain">${esc(item.part_number)}</span>` : ''}</div>
         </div>
       </button>
       <div class="qty ${isLow(item) ? 'low' : ''}"><strong>${nfmt(item.quantity)} ${esc(shortUnit(item.unit))}</strong>${isLow(item) ? `<span class="low-indicator" title="Unter Mindestbestand">${icon('warning-fill')}</span>` : ''}</div>
@@ -319,7 +314,6 @@ async function openItem(id = '') {
   $('item-manufacturer').value = item?.manufacturer || '';
   $('item-part-number').value = item?.part_number || '';
   $('item-package').value = item?.package || '';
-  $('item-tags').value = item?.tags || '';
   $('item-source-url').value = item?.source_url || '';
   $('item-notes').value = item?.notes || '';
   $('item-dialog-title').textContent = item ? 'Bauteil bearbeiten' : 'Bauteil anlegen';
@@ -342,7 +336,6 @@ function itemFormData() {
     manufacturer: $('item-manufacturer').value,
     part_number: $('item-part-number').value,
     package: $('item-package').value,
-    tags: $('item-tags').value,
     source_url: $('item-source-url').value,
     notes: $('item-notes').value,
   };

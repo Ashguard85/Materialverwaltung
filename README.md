@@ -1,6 +1,6 @@
-# Maker Inventar · GitHub Pages PWA · v6
+# Maker Inventar · GitHub Pages PWA · v7
 
-Statisches Zusatz-Frontend für **Maker Inventar Docker v6**. Das Release-ZIP enthält ausschließlich statische App-Dateien: kein Flask, kein Python-Backend, keine SQLite-Datei, keine serverseitigen Secrets und keine `.github/`-Workflow-Infrastruktur. Bestehende Repository-Workflows bleiben beim ZIP-Import unangetastet.
+Statisches Zusatz-Frontend für **Maker Inventar Docker v7**. Das Release-ZIP enthält ausschließlich statische App-Dateien: kein Flask, kein Python-Backend, keine SQLite-Datei, keine serverseitigen Secrets und keine `.github/`-Workflow-Infrastruktur. Bestehende Repository-Workflows bleiben beim ZIP-Import unangetastet.
 
 ## Betriebsmodi
 
@@ -30,7 +30,7 @@ Ein Moduswechsel ändert **nur den aktiven Provider**. Es gibt keine automatisch
 - `zip.js`: kleine lokale ZIP-Implementierung für bildfähige Vollbackups ohne CDN-Abhängigkeit
 - `config.json`: einziges Build-spezifisches, nicht geheimes Runtime-Profil
 
-Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. Docker v6 ↔ Pages v6 gehören zum selben Release. v6 erweitert Datenmodell und Backupformat um optionale Bauteilbilder; alte Backup-Version 1 bleibt importierbar.
+Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. Docker v7 ↔ Pages v7 gehören zum selben Release. Das bildfähige Backupformat Version 2 aus v6 bleibt unverändert; v7 entfernt die Tags-Funktion. Alte Backup-Version 1 bleibt importierbar.
 
 ## Konfiguration
 
@@ -39,7 +39,7 @@ Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. Dock
 ```json
 {
   "appName": "Maker Inventar",
-  "version": "v6",
+  "version": "v7",
   "buildTarget": "pages",
   "defaultMode": null,
   "defaultServerUrl": "https://api.example.com",
@@ -65,7 +65,7 @@ GitHub Pages erlaubt keine frei konfigurierbaren Response-Header. Deshalb enthä
 
 ## Backup / Restore
 
-Das gemeinsame Datenformat ist ab v6 Version 2. Die App exportiert standardmäßig ein **Vollbackup als ZIP**:
+Das gemeinsame Datenformat ist Version 2 (seit v6). Die App exportiert standardmäßig ein **Vollbackup als ZIP**:
 
 ```text
 maker-inventar-backup-….zip
@@ -97,7 +97,7 @@ Es gibt keine externen Laufzeit-CDNs. Nach erfolgreichem ersten Online-Lauf kann
 
 ## PWA-Update-Lifecycle
 
-Cache-Version: `maker-inventar-pwa-v6`.
+Cache-Version: `maker-inventar-pwa-v7`.
 
 - Browser/Client prüft auf neuen Service Worker
 - neue App-Shell wird im Hintergrund in einem neuen versionsbezogenen Cache vorbereitet
@@ -136,7 +136,7 @@ Das ZIP repräsentiert direkt das Repository-Root; keine zusätzliche Ordnerhül
 
 Im Repository unter **Settings → Pages** als Source **GitHub Actions** verwenden. Danach kann ein neues Release-ZIP ins Root des Repositories hochgeladen werden; der Import-Workflow übernimmt den Rest.
 
-## Bekannte Einschränkungen v6
+## Bekannte Einschränkungen v7
 
 - keine echte Offline-/Server-Synchronisationsengine
 - keine Konfliktauflösung nach Feldversionen; Merge arbeitet über stabile IDs
@@ -162,8 +162,12 @@ Für neue Repositories liegt `.gitignore.example` als Vorlage bei; die echte `.g
 
 v5 ersetzt die bisherigen Unicode-Platzhalter in der Oberfläche durch ein vollständig lokales SVG-Iconset. Navigation, Status, Setup, Aktionen und Bauteil-Platzhalter verwenden nun eine einheitliche abgerundete Linienoptik ohne externe CDN-Abhängigkeit.
 
-## Bauteilbilder v6
+## Änderungen v7
 
-v6 unterstützt ein optionales Hauptbild pro Bauteil. Auf iPhone stehen getrennte Aktionen für Kamera und Fotobibliothek zur Verfügung. Das Bild wird vor Speicherung clientseitig auf maximal 1600 px Kantenlänge skaliert und als JPEG neu erzeugt; dadurch werden typische EXIF-Metadaten nicht übernommen. Thumbnails erscheinen in Inventar-, Knapp- und Projektansichten.
+Die frühere Tags-Funktion wurde entfernt. Alte Tags aus v6 werden nicht mehr angezeigt, durchsucht, exportiert oder in neue Datensätze übernommen. Alte Backups mit einem `tags`-Feld bleiben importierbar; das Feld wird ignoriert.
+
+## Bauteilbilder
+
+Die App unterstützt ein optionales Hauptbild pro Bauteil. Auf iPhone stehen getrennte Aktionen für Kamera und Fotobibliothek zur Verfügung. Das Bild wird vor Speicherung clientseitig auf maximal 1600 px Kantenlänge skaliert und als JPEG neu erzeugt; dadurch werden typische EXIF-Metadaten nicht übernommen. Thumbnails erscheinen in Inventar-, Knapp- und Projektansichten.
 
 Local Provider: Bild-Blob in IndexedDB `item_images`. Server Provider: Upload über `/api/items/<id>/image`; Cloudflare-Header werden wie bei anderen API-Aufrufen gesetzt. Bilder werden beim bewussten Local↔Server-Transfer mit übertragen.

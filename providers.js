@@ -26,9 +26,14 @@ function nonnegative(value, fallback = 0) {
 function cloneData(data) {
   return Object.fromEntries(STORES.map(store => [store, (data[store] || []).map(row => ({ ...row }))]));
 }
+function withoutLegacyTags(row) {
+  const clean = { ...row };
+  delete clean.tags;
+  return clean;
+}
 function stripImageMeta(data) {
   const clean = cloneData(data);
-  clean.items = clean.items.map(row => ({ ...row, image_mime_type: '', image_updated_at: '' }));
+  clean.items = clean.items.map(row => ({ ...withoutLegacyTags(row), image_mime_type: '', image_updated_at: '' }));
   return clean;
 }
 
@@ -68,7 +73,7 @@ export class LocalProvider {
       base.name = text(row.name); if (!base.name) throw new Error('Name ist erforderlich.');
       base.category_id = text(row.category_id) || null; base.location_id = text(row.location_id) || null;
       base.quantity = nonnegative(row.quantity); base.min_quantity = nonnegative(row.min_quantity); base.unit = text(row.unit, 'Stk') || 'Stk';
-      base.value_text = text(row.value_text); base.manufacturer = text(row.manufacturer); base.part_number = text(row.part_number); base.package = text(row.package); base.tags = text(row.tags); base.source_url = text(row.source_url); base.notes = text(row.notes);
+      base.value_text = text(row.value_text); base.manufacturer = text(row.manufacturer); base.part_number = text(row.part_number); base.package = text(row.package); base.source_url = text(row.source_url); base.notes = text(row.notes); delete base.tags;
       base.image_mime_type = text(row.image_mime_type); base.image_updated_at = text(row.image_updated_at);
     }
     if (store === 'projects') { base.name = text(row.name); if (!base.name) throw new Error('Name ist erforderlich.'); base.status = text(row.status, 'planned') || 'planned'; base.notes = text(row.notes); }
@@ -93,9 +98,9 @@ export class LocalProvider {
     for (const row of backup.data.project_items) { const conflict = current.project_items.find(existing => existing.project_id === row.project_id && existing.item_id === row.item_id && existing.id !== row.id); if (conflict) hard.push({ table: 'project_items', type: 'pair', message: 'Projekt/Bauteil-Kombination existiert mit anderer ID' }); }
     return { valid: true, counts, conflicts: { overwrites, hard, hard_count: hard.length, overwrite_count: overwriteCount } };
   }
-  async exportData() { const data = stripImageMeta(await this.bootstrap()); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v6', includes_images: false, data }; }
+  async exportData() { const data = stripImageMeta(await this.bootstrap()); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v7', includes_images: false, data }; }
   async importData(backup, strategy = 'replace') {
-    const preview = await this.previewImport(backup); const counts = preview.counts; const data = cloneData(backup.data);
+    const preview = await this.previewImport(backup); const counts = preview.counts; const data = cloneData(backup.data); data.items = data.items.map(withoutLegacyTags);
     data.items = data.items.map(row => ({ ...row, image_mime_type: text(row.image_mime_type), image_updated_at: text(row.image_updated_at) }));
     if (strategy === 'replace') await localReplaceAll(data);
     else if (strategy === 'merge') {

@@ -1,5 +1,5 @@
 const LOCAL_DB = 'maker-inventar-local';
-const LOCAL_DB_VERSION = 2;
+const LOCAL_DB_VERSION = 3;
 const CONFIG_DB = 'maker-inventar-config';
 const CONFIG_DB_VERSION = 1;
 const STORES = ['categories', 'locations', 'items', 'projects', 'project_items'];
@@ -30,13 +30,18 @@ export async function openLocalDb() {
     }
     if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
     if (!db.objectStoreNames.contains(IMAGE_STORE)) db.createObjectStore(IMAGE_STORE, { keyPath: 'item_id' });
-    if (req.oldVersion < 2 && db.objectStoreNames.contains('items')) {
+    if (req.oldVersion < 3 && db.objectStoreNames.contains('items')) {
       const store = req.transaction.objectStore('items');
       store.openCursor().onsuccess = event => {
         const cursor = event.target.result;
         if (!cursor) return;
-        const row = cursor.value;
-        cursor.update({ ...row, image_mime_type: row.image_mime_type || '', image_updated_at: row.image_updated_at || '' });
+        const row = { ...cursor.value };
+        if (req.oldVersion < 2) {
+          row.image_mime_type = row.image_mime_type || '';
+          row.image_updated_at = row.image_updated_at || '';
+        }
+        delete row.tags;
+        cursor.update(row);
         cursor.continue();
       };
     }
