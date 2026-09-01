@@ -1,0 +1,8 @@
+{
+  "appName": "Maker Inventar",
+  "version": "v8",
+  "buildTarget": "docker",
+  "defaultMode": "server",
+  "defaultServerUrl": "",
+  "dockerWebUrl": ""
+}
