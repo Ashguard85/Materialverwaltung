@@ -98,7 +98,7 @@ export class LocalProvider {
     for (const row of backup.data.project_items) { const conflict = current.project_items.find(existing => existing.project_id === row.project_id && existing.item_id === row.item_id && existing.id !== row.id); if (conflict) hard.push({ table: 'project_items', type: 'pair', message: 'Projekt/Bauteil-Kombination existiert mit anderer ID' }); }
     return { valid: true, counts, conflicts: { overwrites, hard, hard_count: hard.length, overwrite_count: overwriteCount } };
   }
-  async exportData() { const data = stripImageMeta(await this.bootstrap()); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v7', includes_images: false, data }; }
+  async exportData() { const data = stripImageMeta(await this.bootstrap()); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v8', includes_images: false, data }; }
   async importData(backup, strategy = 'replace') {
     const preview = await this.previewImport(backup); const counts = preview.counts; const data = cloneData(backup.data); data.items = data.items.map(withoutLegacyTags);
     data.items = data.items.map(row => ({ ...row, image_mime_type: text(row.image_mime_type), image_updated_at: text(row.image_updated_at) }));

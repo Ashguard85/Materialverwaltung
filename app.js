@@ -2,10 +2,10 @@ import { LocalProvider, ServerProvider, saveServerSettings, validateBackup } fro
 import { getSecureSetting, clearServerCredentials } from './db.js';
 import { createZip, readZip } from './zip.js';
 
-const CLIENT_VERSION = 'v7';
+const CLIENT_VERSION = 'v8';
 
 const state = {
-  config: { appName: 'Maker Inventar', version: 'v7', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
+  config: { appName: 'Maker Inventar', version: 'v8', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
   mode: null,
   provider: null,
   data: { categories: [], locations: [], items: [], projects: [], project_items: [] },
@@ -13,6 +13,8 @@ const state = {
   lowOnly: false,
   swRegistration: null,
   updateReady: false,
+  publishedVersion: '',
+  lastUpdateCheck: 0,
   imageUrls: new Map(),
   itemImageChange: null,
   itemPreviewUrl: '',
@@ -641,52 +643,158 @@ async function checkHosting() {
   } catch { $('hosting-warning').classList.remove('hidden'); }
 }
 
+const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+const UPDATE_RECHECK_AFTER_FOCUS_MS = 5 * 60 * 1000;
+
 function updateUiReady() {
   state.updateReady = true;
   $('update-banner').classList.remove('hidden');
-  $('update-status').textContent = 'Neue Version verfügbar';
+  const remote = state.publishedVersion && state.publishedVersion !== CLIENT_VERSION ? ` ${state.publishedVersion}` : '';
+  $('update-status').textContent = `Neue Version${remote} verfügbar`;
+}
+
+function clearUpdateReady() {
+  state.updateReady = false;
+  $('update-banner').classList.add('hidden');
+}
+
+async function probePublishedVersion() {
+  try {
+    const response = await fetch(`VERSION?update-check=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) return '';
+    const version = (await response.text()).trim();
+    if (/^v\d+(?:[.-][A-Za-z0-9]+)*$/.test(version)) state.publishedVersion = version;
+    return version;
+  } catch {
+    return '';
+  }
+}
+
+function watchInstallingWorker(registration, worker) {
+  if (!worker) return;
+  $('update-status').textContent = 'Update wird vorbereitet …';
+  worker.addEventListener('statechange', () => {
+    if (worker.state === 'installed') {
+      if (navigator.serviceWorker.controller) updateUiReady();
+      else $('update-status').textContent = 'Aktuell';
+    } else if (worker.state === 'redundant') {
+      $('update-status').textContent = 'Update konnte nicht vorbereitet werden';
+    }
+  });
+}
+
+function activateWaitingWorker(worker, reason = 'manual') {
+  if (!worker) return false;
+  localStorage.setItem('maker-inventar-view', state.view);
+  sessionStorage.removeItem('maker-inventar-update-reloaded');
+  sessionStorage.setItem('maker-inventar-update-reload', reason);
+  $('update-status').textContent = 'Update wird aktiviert …';
+  worker.postMessage({ type: 'SKIP_WAITING' });
+  return true;
+}
+
+async function checkServiceWorkerUpdate({ silent = false } = {}) {
+  const registration = state.swRegistration;
+  if (!registration) throw new Error('Service Worker nicht verfügbar.');
+  state.lastUpdateCheck = Date.now();
+
+  if (registration.waiting) {
+    updateUiReady();
+    return;
+  }
+
+  if (!silent) $('update-status').textContent = 'Prüfung läuft …';
+  const publishedVersion = await probePublishedVersion();
+  await registration.update();
+
+  if (registration.waiting) {
+    updateUiReady();
+    return;
+  }
+  if (registration.installing) {
+    watchInstallingWorker(registration, registration.installing);
+    return;
+  }
+
+  if (publishedVersion && publishedVersion !== CLIENT_VERSION) {
+    $('update-status').textContent = `Neue Version ${publishedVersion} wird vorbereitet …`;
+    // CDN propagation can briefly expose VERSION before service-worker.js.
+    // One delayed retry avoids requiring another manual tap.
+    setTimeout(() => registration.update().catch(() => {}), 2500);
+    return;
+  }
+
+  if (!state.updateReady) $('update-status').textContent = 'Aktuell';
 }
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) { $('update-status').textContent = 'Service Worker nicht unterstützt'; return; }
   try {
-    const registration = await navigator.serviceWorker.register('service-worker.js', { scope: './' });
-    state.swRegistration = registration;
-    if (registration.waiting) updateUiReady(); else $('update-status').textContent = 'Aktuell';
-    registration.addEventListener('updatefound', () => {
-      const worker = registration.installing;
-      if (!worker) return;
-      worker.addEventListener('statechange', () => {
-        if (worker.state === 'installed' && navigator.serviceWorker.controller) updateUiReady();
-      });
-    });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (sessionStorage.getItem('maker-inventar-manual-update') === '1' && !sessionStorage.getItem('maker-inventar-reloaded')) {
-        sessionStorage.setItem('maker-inventar-reloaded', '1');
-        sessionStorage.removeItem('maker-inventar-manual-update');
+      const reason = sessionStorage.getItem('maker-inventar-update-reload');
+      if (reason && !sessionStorage.getItem('maker-inventar-update-reloaded')) {
+        sessionStorage.setItem('maker-inventar-update-reloaded', '1');
+        sessionStorage.removeItem('maker-inventar-update-reload');
         window.location.reload();
       }
     });
-    setTimeout(() => registration.update().catch(() => {}), 1200);
-  } catch { $('update-status').textContent = 'Update-Prüfung nicht verfügbar'; }
+
+    const registration = await navigator.serviceWorker.register('service-worker.js', {
+      scope: './',
+      updateViaCache: 'none'
+    });
+    state.swRegistration = registration;
+
+    registration.addEventListener('updatefound', () => watchInstallingWorker(registration, registration.installing));
+
+    // A waiting worker found during a fresh app launch was prepared in an earlier
+    // session. This is the safe restart point requested by the PWA update model.
+    if (registration.waiting && navigator.serviceWorker.controller) {
+      clearUpdateReady();
+      activateWaitingWorker(registration.waiting, 'startup');
+      return;
+    }
+
+    if (registration.waiting) updateUiReady();
+    else $('update-status').textContent = 'Aktuell';
+
+    window.addEventListener('online', () => checkServiceWorkerUpdate({ silent: true }).catch(() => {}));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - state.lastUpdateCheck < UPDATE_RECHECK_AFTER_FOCUS_MS) return;
+      checkServiceWorkerUpdate({ silent: true }).catch(() => {});
+    });
+
+    // Check immediately after registration, then periodically while the app stays open.
+    checkServiceWorkerUpdate({ silent: true }).catch(() => {});
+    setInterval(() => checkServiceWorkerUpdate({ silent: true }).catch(() => {}), UPDATE_CHECK_INTERVAL_MS);
+  } catch {
+    $('update-status').textContent = 'Update-Prüfung nicht verfügbar';
+  }
 }
 
 function applyUpdate() {
   const worker = state.swRegistration?.waiting;
-  if (!worker) { toast('Kein wartendes Update gefunden.'); return; }
-  localStorage.setItem('maker-inventar-view', state.view);
-  sessionStorage.removeItem('maker-inventar-reloaded');
-  sessionStorage.setItem('maker-inventar-manual-update', '1');
-  worker.postMessage({ type: 'SKIP_WAITING' });
+  if (!worker) {
+    if (state.swRegistration?.installing) toast('Das Update wird noch vorbereitet.');
+    else toast('Kein wartendes Update gefunden.');
+    return;
+  }
+  activateWaitingWorker(worker, 'manual');
 }
 
 async function checkUpdate() {
   try {
     if (!state.swRegistration) throw new Error('Service Worker nicht verfügbar.');
-    $('update-status').textContent = 'Prüfung läuft …';
-    await state.swRegistration.update();
-    setTimeout(() => { if (!state.updateReady) $('update-status').textContent = 'Aktuell'; }, 700);
-  } catch (error) { $('update-status').textContent = 'Prüfung fehlgeschlagen'; toast(error.message); }
+    if (state.swRegistration.waiting) {
+      applyUpdate();
+      return;
+    }
+    await checkServiceWorkerUpdate({ silent: false });
+  } catch (error) {
+    $('update-status').textContent = 'Prüfung fehlgeschlagen';
+    toast(error.message);
+  }
 }
 
 function bindEvents() {
