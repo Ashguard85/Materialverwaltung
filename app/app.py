@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
-APP_VERSION = "v8"
+APP_VERSION = "v9"
 BACKUP_FORMAT = "maker-inventar-backup"
 BACKUP_VERSION = 2
 SCHEMA_VERSION = 2
@@ -329,8 +329,9 @@ def runtime_config():
             "version": APP_VERSION,
             "buildTarget": "docker",
             "defaultMode": "server",
-            "defaultServerUrl": app_url,
+            "defaultServerUrl": "",
             "dockerWebUrl": os.environ.get("DOCKER_WEB_URL", app_url).strip().rstrip("/"),
+            "sameOriginServer": True,
             "authEnabled": env_bool("AUTH_ENABLED", False),
         }
     )

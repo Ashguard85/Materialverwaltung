@@ -1,4 +1,4 @@
-# Maker Inventar · Docker · v8
+# Maker Inventar · Docker · v9
 
 Schlankes self-hosted Inventar für Elektronik, ESP/Arduino, Module und Maker-Projekte. **Docker ist die vollständige, eigenständig nutzbare Fullstack-App**. Das separate Pages-Paket ist nur ein zusätzlicher Client.
 
@@ -80,7 +80,7 @@ Wichtige Endpunkte:
 
 ## SQLite / Migrationen
 
-SQLite wird mit `WAL`, `synchronous=FULL`, `foreign_keys=ON` und Busy-Timeout betrieben. Die Schema-Version liegt in `PRAGMA user_version`; Migrationsschritte werden beim Start automatisch angewendet. Die Bild-Migration aus v6 auf Schema-Version 2 bleibt erhalten. v8 benötigt keine weitere SQLite-Schemaänderung; die frühere Tags-Spalte bleibt intern nur aus Kompatibilitätsgründen bestehen und wird von API, UI, CSV und neuen Backups nicht mehr verwendet. Vor Migrationen wird automatisch ein DB-Backup erzeugt.
+SQLite wird mit `WAL`, `synchronous=FULL`, `foreign_keys=ON` und Busy-Timeout betrieben. Die Schema-Version liegt in `PRAGMA user_version`; Migrationsschritte werden beim Start automatisch angewendet. Die Bild-Migration aus v6 auf Schema-Version 2 bleibt erhalten. v9 benötigt keine weitere SQLite-Schemaänderung; die frühere Tags-Spalte bleibt intern nur aus Kompatibilitätsgründen bestehen und wird von API, UI, CSV und neuen Backups nicht mehr verwendet. Vor Migrationen wird automatisch ein DB-Backup erzeugt.
 
 ## Backup / Restore
 
@@ -96,7 +96,7 @@ Die installierte PWA kann daher nach einem erfolgreichen Cache-Lauf ihre Oberfl�
 
 ## Update-Lifecycle
 
-Service-Worker-Cache: `maker-inventar-pwa-v8`.
+Service-Worker-Cache: `maker-inventar-pwa-v9`.
 
 - neue Version wird installiert und vorbereitet
 - `skipWaiting()` wird **nicht** automatisch bei Installation aufgerufen
@@ -126,9 +126,9 @@ Der Bot-Commit löst keinen erneuten Import aus; dadurch entsteht keine Commit-S
 
 ## Pages-Kompatibilität
 
-Docker v8 ↔ Pages v8. Backupformat Version 2 bleibt kompatibel; v8 entfernt die Tags-Funktion aus UI, API-Ausgabe, CSV und neuen Backups. Bei Änderungen an API, Datenmodell, Provider, Backupformat oder Service Worker beide Pakete gemeinsam versionieren.
+Docker v9 ↔ Pages v9. Backupformat Version 2 bleibt kompatibel; v9 entfernt die Tags-Funktion aus UI, API-Ausgabe, CSV und neuen Backups. Bei Änderungen an API, Datenmodell, Provider, Backupformat oder Service Worker beide Pakete gemeinsam versionieren.
 
-## Bekannte Einschränkungen v8
+## Bekannte Einschränkungen v9
 
 - keine echte bidirektionale Offline-Synchronisationsengine; Datenübertragung ist bewusst manuell
 - keine Barcode-/QR-Erfassung
@@ -160,7 +160,7 @@ Für neue Repositories liegt `.gitignore.example` als Vorlage bei; die echte `.g
 
 v5 ersetzt die bisherigen Unicode-Platzhalter in der Oberfläche durch ein vollständig lokales SVG-Iconset. Navigation, Status, Setup, Aktionen und Bauteil-Platzhalter verwenden nun eine einheitliche abgerundete Linienoptik ohne externe Abhängigkeiten.
 
-## Änderungen v8
+## Änderungen v9
 
 Die frühere Tags-Funktion wurde entfernt. Alte Tag-Werte werden nicht mehr angezeigt, durchsucht, über die API ausgegeben, in CSV exportiert oder in neue Backups übernommen. Alte Backups mit einem `tags`-Feld bleiben importierbar; das Feld wird ignoriert.
 
@@ -168,6 +168,10 @@ Die frühere Tags-Funktion wurde entfernt. Alte Tag-Werte werden nicht mehr ange
 
 Bauteile können ein optionales Hauptbild erhalten. Der gemeinsame Frontend-Code bietet Kamera und Fotobibliothek an und skaliert Bilder vor dem Upload auf maximal 1600 px. Serverseitig werden nur JPEG, PNG und WebP bis `IMAGE_MAX_BYTES` akzeptiert; neue PWA-Aufnahmen werden als JPEG gespeichert. Dateien liegen persistent unter `/app/data/uploads/items/`. Beim Löschen eines Bauteils wird das zugehörige Bild entfernt.
 
-## Änderungen v8
+## Änderungen v9
 
 Der Service-Worker-Lifecycle wurde gehärtet: Registrierung mit `updateViaCache: none`, sofortige und periodische Update-Prüfung, erneute Prüfung bei `online` und nach Rückkehr in den Vordergrund, `clients.claim()` nach Aktivierung sowie ein kontrollierter Einmal-Reload nach bewusstem `SKIP_WAITING`. Ein bereits in einer früheren Sitzung vollständig vorbereitetes Update wird beim nächsten App-Start als sicherem Neustart automatisch aktiviert. Während einer laufenden Sitzung werden neue Versionen weiterhin nur vorbereitet und nicht erzwungen.
+
+## Änderungen v9
+
+Die Docker-Weboberfläche verwendet im Server-Modus nun immer `window.location.origin` für `/api/...`. Eine zuvor lokal gespeicherte Backend-URL wird im Docker-Build ignoriert. Cloudflare Service ID/Secret werden bei Same-Origin-Requests nicht gesendet und die entsprechenden Setup-Felder sind ausgeblendet. Damit funktioniert direkter LAN-Zugriff (z. B. `http://HOST:PORT`) ohne Backend-Konfiguration. `APP_URL` bleibt ausschließlich die öffentliche Basis für serverseitig erzeugte externe Links; `DOCKER_WEB_URL` bleibt der manuelle Fallback-Link.

@@ -146,6 +146,11 @@
 
           <section id="server-settings" class="settings-card">
             <h2>Serververbindung</h2>
+            <div id="docker-integrated-server" class="integrated-server hidden">
+              <span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-server"></use></svg></span>
+              <span><strong>Automatisch verbunden</strong><small>API über <code id="docker-origin"></code></small></span>
+              <span class="status-pill">Direkt</span>
+            </div>
             <div class="settings-form settings-rows">
               <label class="settings-row"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-globe"></use></svg></span><span class="settings-label">Backend URL</span><input id="backend-url" type="url" inputmode="url" autocomplete="url" placeholder="https://api.example.com"></label>
               <label class="settings-row"><span class="settings-row-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-external"></use></svg></span><span class="settings-label">Docker-Weboberfläche</span><input id="docker-web-url" type="url" inputmode="url" autocomplete="url" placeholder="https://docker-app.example.com"></label>

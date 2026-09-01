@@ -98,7 +98,7 @@ export class LocalProvider {
     for (const row of backup.data.project_items) { const conflict = current.project_items.find(existing => existing.project_id === row.project_id && existing.item_id === row.item_id && existing.id !== row.id); if (conflict) hard.push({ table: 'project_items', type: 'pair', message: 'Projekt/Bauteil-Kombination existiert mit anderer ID' }); }
     return { valid: true, counts, conflicts: { overwrites, hard, hard_count: hard.length, overwrite_count: overwriteCount } };
   }
-  async exportData() { const data = stripImageMeta(await this.bootstrap()); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v8', includes_images: false, data }; }
+  async exportData() { const data = stripImageMeta(await this.bootstrap()); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v9', includes_images: false, data }; }
   async importData(backup, strategy = 'replace') {
     const preview = await this.previewImport(backup); const counts = preview.counts; const data = cloneData(backup.data); data.items = data.items.map(withoutLegacyTags);
     data.items = data.items.map(row => ({ ...row, image_mime_type: text(row.image_mime_type), image_updated_at: text(row.image_updated_at) }));
@@ -115,14 +115,21 @@ export class LocalProvider {
 
 export class ServerProvider {
   constructor(config) { this.kind = 'server'; this.config = config; }
-  async settings() { return { backendUrl: text(await getSecureSetting('backendUrl')) || text(this.config.defaultServerUrl), cfClientId: text(await getSecureSetting('cfClientId')), cfClientSecret: text(await getSecureSetting('cfClientSecret')), appApiToken: text(await getSecureSetting('appApiToken')) }; }
+  isSameOrigin() { return this.config.buildTarget === 'docker' || this.config.sameOriginServer === true; }
+  async settings() {
+    if (this.isSameOrigin()) {
+      return { backendUrl: window.location.origin, cfClientId: '', cfClientSecret: '', appApiToken: text(await getSecureSetting('appApiToken')) };
+    }
+    return { backendUrl: text(await getSecureSetting('backendUrl')) || text(this.config.defaultServerUrl), cfClientId: text(await getSecureSetting('cfClientId')), cfClientSecret: text(await getSecureSetting('cfClientSecret')), appApiToken: text(await getSecureSetting('appApiToken')) };
+  }
   async rawRequest(path, options = {}) {
     const settings = await this.settings(); if (!settings.backendUrl) throw new Error('Backend URL ist noch nicht eingerichtet.');
     let parsed; try { parsed = new URL(settings.backendUrl); } catch { throw new Error('Backend URL ist ungültig.'); }
-    if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') throw new Error('Für externe Server ist HTTPS erforderlich.');
+    const sameOrigin = this.isSameOrigin() && parsed.origin === window.location.origin;
+    if (!sameOrigin && parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') throw new Error('Für externe Server ist HTTPS erforderlich.');
     const url = settings.backendUrl.replace(/\/$/, '') + path; const headers = new Headers(options.headers || {});
     if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-    if (settings.cfClientId) headers.set('CF-Access-Client-Id', settings.cfClientId); if (settings.cfClientSecret) headers.set('CF-Access-Client-Secret', settings.cfClientSecret); if (settings.appApiToken) headers.set('Authorization', `Bearer ${settings.appApiToken}`);
+    if (!sameOrigin && settings.cfClientId) headers.set('CF-Access-Client-Id', settings.cfClientId); if (!sameOrigin && settings.cfClientSecret) headers.set('CF-Access-Client-Secret', settings.cfClientSecret); if (settings.appApiToken) headers.set('Authorization', `Bearer ${settings.appApiToken}`);
     let response; try { response = await fetch(url, { ...options, headers, cache: 'no-store' }); } catch { throw new Error('Server nicht erreichbar.'); }
     if (!response.ok) { let message = ''; try { message = (await response.clone().json()).error || ''; } catch { /* ignore */ } if (response.status === 401 || response.status === 403) throw new Error(message || 'Authentifizierung oder Berechtigung fehlgeschlagen.'); if (response.status === 404) throw new Error(message || 'Nicht gefunden.'); if (response.status === 504 || response.status === 408) throw new Error('Server-Zeitüberschreitung.'); throw new Error(message || `Serverfehler (${response.status}).`); }
     return response;

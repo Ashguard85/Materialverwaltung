@@ -2,10 +2,10 @@ import { LocalProvider, ServerProvider, saveServerSettings, validateBackup } fro
 import { getSecureSetting, clearServerCredentials } from './db.js';
 import { createZip, readZip } from './zip.js';
 
-const CLIENT_VERSION = 'v8';
+const CLIENT_VERSION = 'v9';
 
 const state = {
-  config: { appName: 'Maker Inventar', version: 'v8', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '' },
+  config: { appName: 'Maker Inventar', version: 'v9', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '', sameOriginServer: false, authEnabled: false },
   mode: null,
   provider: null,
   data: { categories: [], locations: [], items: [], projects: [], project_items: [] },
@@ -50,7 +50,8 @@ async function loadConfig() {
   } catch {
     // Cached app shell may still run; defaults keep local mode usable.
   }
-  if (state.config.buildTarget === 'docker' && !state.config.defaultServerUrl) state.config.defaultServerUrl = window.location.origin;
+  if (state.config.buildTarget === 'docker') { state.config.sameOriginServer = true; state.config.defaultMode = 'server'; state.config.defaultServerUrl = window.location.origin; }
+  document.documentElement.dataset.buildTarget = state.config.buildTarget;
   document.title = state.config.appName || 'Maker Inventar';
   $('app-version').textContent = CLIENT_VERSION;
   if (state.config.dockerWebUrl) {
@@ -60,10 +61,12 @@ async function loadConfig() {
 }
 
 function currentMode() {
+  if (state.config.buildTarget === 'docker') return 'server';
   return localStorage.getItem('maker-inventar-mode') || state.config.defaultMode || null;
 }
 
 async function switchMode(mode, { firstRun = false } = {}) {
+  if (state.config.buildTarget === 'docker') mode = 'server';
   if (!['local', 'server'].includes(mode)) return;
   clearImageCache();
   localStorage.setItem('maker-inventar-mode', mode);
@@ -72,6 +75,30 @@ async function switchMode(mode, { firstRun = false } = {}) {
   renderMode();
   if (firstRun && $('first-run-dialog').open) $('first-run-dialog').close();
   await loadData();
+}
+
+function renderBuildTargetUi() {
+  const isDocker = state.config.buildTarget === 'docker';
+  const modeChoice = document.querySelector('.mode-choice');
+  const serverCard = $('server-settings');
+  const integrated = $('docker-integrated-server');
+  if (modeChoice) modeChoice.classList.toggle('hidden', isDocker);
+  if (integrated) {
+    integrated.classList.toggle('hidden', !isDocker);
+    const origin = $('docker-origin'); if (origin) origin.textContent = window.location.origin;
+  }
+  if (serverCard) {
+    const heading = serverCard.querySelector('h2'); if (heading) heading.textContent = isDocker ? 'Integriertes Backend' : 'Serververbindung';
+  }
+  for (const id of ['backend-url','docker-web-url','cf-client-id','cf-client-secret']) {
+    const row = $(id)?.closest('.settings-row'); if (row) row.classList.toggle('hidden', isDocker);
+  }
+  const tokenRow = $('app-api-token')?.closest('.settings-row');
+  if (tokenRow) tokenRow.classList.toggle('hidden', isDocker && !state.config.authEnabled);
+  $('save-server-settings')?.classList.toggle('hidden', isDocker && !state.config.authEnabled);
+  $('clear-server-settings')?.classList.toggle('hidden', isDocker && !state.config.authEnabled);
+  $('transfer-local-server')?.classList.toggle('hidden', isDocker);
+  $('transfer-server-local')?.classList.toggle('hidden', isDocker);
 }
 
 function renderMode() {
@@ -92,9 +119,12 @@ function renderMode() {
   $('choose-server').classList.toggle('selected', state.mode === 'server');
   $('server-settings').classList.toggle('hidden', state.mode !== 'server');
   $('local-data-warning').classList.toggle('hidden', state.mode !== 'local');
-  $('mode-explanation').textContent = state.mode === 'local'
-    ? 'Aktiv ist nur der lokale Datenspeicher dieses Geräts. Ein Wechsel auf Server überträgt nichts automatisch.'
-    : 'Aktiv ist das Docker-Backend. Lokale IndexedDB-Daten bleiben getrennt und werden nicht automatisch synchronisiert.';
+  $('mode-explanation').textContent = state.config.buildTarget === 'docker'
+    ? 'Die Docker-App verwendet automatisch ihr integriertes Backend über dieselbe Adresse. Keine Backend-URL oder Cloudflare-Service-Zugangsdaten nötig.'
+    : state.mode === 'local'
+      ? 'Aktiv ist nur der lokale Datenspeicher dieses Geräts. Ein Wechsel auf Server überträgt nichts automatisch.'
+      : 'Aktiv ist das Docker-Backend. Lokale IndexedDB-Daten bleiben getrennt und werden nicht automatisch synchronisiert.';
+  renderBuildTargetUi();
 }
 async function loadData() {
   setConnectionWarning('');
@@ -488,6 +518,17 @@ async function manageDelete(store, id, label) {
 }
 
 async function loadServerSettingsIntoForm() {
+  if (state.config.buildTarget === 'docker') {
+    $('backend-url').value = window.location.origin;
+    $('docker-web-url').value = state.config.dockerWebUrl || window.location.origin;
+    $('cf-client-id').value = ''; $('cf-client-secret').value = '';
+    const hasToken = Boolean(await getSecureSetting('appApiToken'));
+    $('app-api-token').value = ''; $('app-api-token').placeholder = hasToken ? 'App API Token ist gespeichert' : 'nur falls AUTH_ENABLED=true';
+    const fallbackUrl = state.config.dockerWebUrl || window.location.origin;
+    $('docker-fallback').href = fallbackUrl; $('docker-fallback').classList.remove('hidden');
+    renderBuildTargetUi();
+    return;
+  }
   const backend = await getSecureSetting('backendUrl');
   const clientId = await getSecureSetting('cfClientId');
   const storedDockerWebUrl = await getSecureSetting('dockerWebUrl');
@@ -506,7 +547,7 @@ async function loadServerSettingsIntoForm() {
 
 async function saveConnection() {
   try {
-    await saveServerSettings({ backendUrl: $('backend-url').value, dockerWebUrl: $('docker-web-url').value, cfClientId: $('cf-client-id').value, cfClientSecret: $('cf-client-secret').value, appApiToken: $('app-api-token').value });
+    await saveServerSettings({ backendUrl: state.config.buildTarget === 'docker' ? '' : $('backend-url').value, dockerWebUrl: state.config.buildTarget === 'docker' ? '' : $('docker-web-url').value, cfClientId: state.config.buildTarget === 'docker' ? '' : $('cf-client-id').value, cfClientSecret: state.config.buildTarget === 'docker' ? '' : $('cf-client-secret').value, appApiToken: $('app-api-token').value });
     $('cf-client-secret').value = '';
     $('app-api-token').value = '';
     await loadServerSettingsIntoForm();
@@ -517,7 +558,7 @@ async function saveConnection() {
 
 async function testServer() {
   try {
-    await saveServerSettings({ backendUrl: $('backend-url').value, dockerWebUrl: $('docker-web-url').value, cfClientId: $('cf-client-id').value, cfClientSecret: $('cf-client-secret').value, appApiToken: $('app-api-token').value });
+    await saveServerSettings({ backendUrl: state.config.buildTarget === 'docker' ? '' : $('backend-url').value, dockerWebUrl: state.config.buildTarget === 'docker' ? '' : $('docker-web-url').value, cfClientId: state.config.buildTarget === 'docker' ? '' : $('cf-client-id').value, cfClientSecret: state.config.buildTarget === 'docker' ? '' : $('cf-client-secret').value, appApiToken: $('app-api-token').value });
     const result = await new ServerProvider(state.config).testConnection();
     toast(result?.status === 'ok' ? 'Server erreichbar.' : 'Server antwortet.');
   } catch (error) { toast(error.message); }
@@ -850,6 +891,7 @@ function bindEvents() {
 async function init() {
   bindEvents();
   await loadConfig();
+  renderBuildTargetUi();
   state.mode = currentMode();
   if (!state.mode && state.config.buildTarget === 'docker') state.mode = 'server';
   if (!state.mode) {
