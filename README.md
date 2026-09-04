@@ -1,147 +1,149 @@
-# Maker Inventar · Docker · v12
+# Maker Inventar · GitHub Pages PWA · v12
 
-Schlankes self-hosted Inventar für Elektronik, ESP/Arduino, Module und Maker-Projekte. **Docker ist die vollständige, eigenständig nutzbare Fullstack-App**. Das separate Pages-Paket ist nur ein zusätzlicher Client.
+Statisches Zusatz-Frontend für **Maker Inventar Docker v12**. Das Release-ZIP enthält ausschließlich statische App-Dateien: kein Flask, kein Python-Backend, keine SQLite-Datei, keine serverseitigen Secrets und keine `.github/`-Workflow-Infrastruktur. Bestehende Repository-Workflows bleiben beim ZIP-Import unangetastet.
 
-## Architektur
+## Betriebsmodi
 
-- Flask + SQLite unter `/app/data/app.sqlite`
-- Vollständiges Docker-Frontend + installierbare PWA
-- REST API für Bauteile, Kategorien, Lagerorte, Projekte und Projektbedarf
-- Separates Pages-Frontend nutzt dieselben Frontend-Dateien und wählt Server Provider oder Local Provider (IndexedDB)
-- Keine Microservices, kein Redis/PostgreSQL/Node-Backend
+### Lokal
 
-## Datenmodell
+- App-Shell aus Service-Worker-Cache
+- strukturierte Fachdaten in IndexedDB (`maker-inventar-local`)
+- kein Backend, keine Backend-URL, kein Cloudflare-Token
+- nach erfolgreicher Installation/Cache-Befüllung weitgehend offline nutzbar
+- Vollbackup-ZIP mit Daten + Bauteilbildern dringend empfohlen, da Website-/PWA-Daten auf dem Gerät verloren gehen können
 
-- `categories`: Kategorien wie Mikrocontroller, Sensoren, Widerstände
-- `locations`: physische Lagerorte
-- `items`: Name, Bestand, Einheit, Mindestbestand, Kategorie, Lagerort, Wert/Variante, Hersteller, Teilenummer, Package, Link, Notizen sowie Bild-Metadaten
-- Bauteilbilder: getrennte Dateien unter `/app/data/uploads/items/`; keine Binärdaten in SQLite
-- `projects`: Name, Status, Notizen
-- `project_items`: benötigte Menge eines Inventarartikels pro Projekt
+### Server
 
-Die Projektansicht zeigt direkt, wie viele benötigte Positionen bereits ausreichend vorhanden sind.
+- dieselbe UI und Fachlogik
+- `ServerProvider` spricht per HTTPS mit dem Docker-Backend
+- Backend URL + Cloudflare Service Token werden nur auf diesem Gerät in einer separaten IndexedDB (`maker-inventar-config`) gespeichert
+- Service Secret wird nach Speicherung nicht wieder vollständig angezeigt
+- Secrets sind nicht Bestandteil von Exporten/Backups
 
-## Docker / Portainer
+Ein Moduswechsel ändert **nur den aktiven Provider**. Es gibt keine automatische Synchronisation. Die Funktionen „Lokale Daten auf Server übertragen“ und „Serverdaten lokal übernehmen“ sind bewusst bestätigte Migrationen mit Vorschau; vor destruktiven Zieländerungen wird ein Sicherheitsbackup erzeugt bzw. exportiert.
 
-Der Container läuft intern auf `8080`, Arbeitsverzeichnis ist `/app`, persistente Nutzdaten liegen ausschließlich unter `/app/data`.
+## Gemeinsame Frontend-/Provider-Struktur
 
-Beispiel für Portainer/Git-Build: siehe `docker-compose.example.yml`. Repository-URL z. B.:
+- `index.html`, `app.css`, `app.js`: gemeinsame UI/Fachlogik
+- `providers.js`: `ServerProvider` und `LocalProvider`
+- `db.js`: IndexedDB-Versionierung, lokale Bild-Blobs und getrennte Konfigurationsdatenbank
+- `zip.js`: kleine lokale ZIP-Implementierung für bildfähige Vollbackups ohne CDN-Abhängigkeit
+- `config.json`: einziges Build-spezifisches, nicht geheimes Runtime-Profil
 
-`https://github.com/USER/maker-inventar-docker.git#main`
+Die gleichen Frontend-Dateien liegen im Docker-Paket unter `app/frontend/`. Docker v12 ↔ Pages v12 gehören zum selben Release. Das bildfähige Backupformat Version 2 aus v6 bleibt unverändert; v9 entfernt die Tags-Funktion. Alte Backup-Version 1 bleibt importierbar.
 
-Persistentes Volume z. B.:
+## Konfiguration
 
-`/home/USER/docker/maker-inventar/data:/app/data`
+`config.json` darf **keine Secrets** enthalten. Optional können dort feste öffentliche Defaults eingetragen werden:
 
-Nach Git-Update kann der Stack neu deployed werden; die SQLite-Datei bleibt im Host-Volume erhalten.
+```json
+{
+  "appName": "Maker Inventar",
+  "version": "v12",
+  "buildTarget": "pages",
+  "defaultMode": null,
+  "defaultServerUrl": "https://api.example.com",
+  "dockerWebUrl": "https://docker-app.example.com"
+}
+```
 
-## Environment-Variablen
-
-- `APP_TITLE` – Anzeigename
-- `APP_URL` – öffentliche Docker/API-URL, z. B. `https://api.example.com`
-- `DOCKER_WEB_URL` – optionaler manueller Fallback zur vollständigen Docker-Weboberfläche; Standard ist `APP_URL`
-- `SECRET_KEY` – reserviert für serverseitige Sicherheitsfunktionen; geheim halten
-- `AUTH_ENABLED` – `true` aktiviert zusätzlichen Bearer-Token-Schutz der API
-- `APP_API_TOKEN` – Token für `Authorization: Bearer ...`, nur nötig bei `AUTH_ENABLED=true`
-- `BACKUP_KEEP` – Anzahl rotierender SQLite-/Upload-Sicherheitsbackups, Standard `50`
-- `IMAGE_MAX_BYTES` – maximales serverseitiges Bild-Uploadlimit, Standard `4194304` (4 MiB)
-- `PWA_ALLOWED_ORIGIN` – exakt erlaubte Pages-Origin, z. B. `https://app.example.com`
-- `DATA_DIR` – standardmäßig `/app/data`
-
-Secrets niemals ins Repository oder Image schreiben. `.env.example` enthält nur Platzhalter.
+Bei leerer `defaultServerUrl` wird die Backend-URL im Setup eingegeben. Für externe Server erzwingt der Client HTTPS.
 
 ## Cloudflare Access / CORS
 
-Typischer Betrieb:
+Für Server-Modus kann ein separates Cloudflare Access Service Token pro Gerät verwendet werden. Token eng berechtigen und bei Verlust des Geräts einzeln widerrufen.
 
-- Docker-Weboberfläche: Cloudflare Access OTP/Allow
-- Pages-PWA im Server-Modus: Cloudflare Access Service Token (`CF-Access-Client-Id`, `CF-Access-Client-Secret`)
-- Pages lokal: kein Server/Token nötig
+Das Docker-Backend muss z. B. erhalten:
 
-Die Browser-PWA speichert Service-Token nur in einer separaten IndexedDB-Konfigurationsdatenbank auf dem jeweiligen Gerät. Secrets werden nicht in Backups exportiert und nach Speicherung nicht wieder vollständig angezeigt.
+`PWA_ALLOWED_ORIGIN=https://app.example.com`
 
-CORS wird nur für die **exakte** `PWA_ALLOWED_ORIGIN` gesetzt. Unterstützt werden GET/POST/PUT/PATCH/DELETE/OPTIONS sowie `Content-Type`, `Authorization`, `CF-Access-Client-Id` und `CF-Access-Client-Secret`. Kein `Access-Control-Allow-Origin: *`.
+CORS-Preflight erlaubt die Cloudflare-Header nur von dieser exakten Origin. Cloudflare Access sollte für API-Zugriff eine passende Service-Auth-Policy besitzen; die normale Docker-Oberfläche kann parallel über OTP/Allow geschützt bleiben.
 
-## API
+### CSP
 
-Wichtige Endpunkte:
-
-- `GET /health`
-- `GET /api/config`
-- `GET /api/bootstrap`
-- `/api/items`, `/api/items/<id>`
-- `GET/POST/DELETE /api/items/<id>/image`
-- `/api/categories`, `/api/locations`
-- `/api/projects`, `/api/project-items`
-- `GET /api/export/backup`
-- `GET /api/export/items.csv`
-- `POST /api/import/preview`
-- `POST /api/import/restore`
-
-## SQLite / Migrationen
-
-SQLite wird mit `WAL`, `synchronous=FULL`, `foreign_keys=ON` und Busy-Timeout betrieben. Die Schema-Version liegt in `PRAGMA user_version`; Migrationsschritte werden beim Start automatisch angewendet. Die Bild-Migration aus v6 auf Schema-Version 2 bleibt erhalten. v9 benötigt keine weitere SQLite-Schemaänderung; die frühere Tags-Spalte bleibt intern nur aus Kompatibilitätsgründen bestehen und wird von API, UI, CSV und neuen Backups nicht mehr verwendet. Vor Migrationen wird automatisch ein DB-Backup erzeugt.
+GitHub Pages erlaubt keine frei konfigurierbaren Response-Header. Deshalb enthält `index.html` eine restriktive CSP als Meta-Policy: keine Inline-Scripts, keine Inline-Handler, kein `eval`, keine CDN-Abhängigkeiten. `connect-src https:` ist nötig, weil die Server-URL zur Laufzeit frei konfigurierbar ist. Bei fest gebauter Backend-URL kann diese Direktive projektspezifisch weiter eingeschränkt werden.
 
 ## Backup / Restore
 
-Backupformat: `maker-inventar-backup`, Version 2. Die UI exportiert ein Vollbackup-ZIP mit `backup.json` und `images/`. Alte JSON-Backups der Version 1 bleiben importierbar. Zugangsdaten/Cloudflare-Secrets sind nie Bestandteil eines Backups.
+Das gemeinsame Datenformat ist Version 2 (seit v6). Die App exportiert standardmäßig ein **Vollbackup als ZIP**:
 
-Vor destruktivem Restore/Import erzeugt das Backend automatisch ein SQLite-Backup unter `/app/data/backups/`; vorhandene Uploads werden zusätzlich als `uploads-…zip` gesichert. Alte Sicherungen werden gemäß `BACKUP_KEEP` rotiert. `replace` ersetzt den Zielbestand und seine Bilder, `merge` arbeitet nach stabiler ID und behält bestehende Zielbilder, sofern kein neues Bild übertragen wird. Es gibt keine Fake-Synchronisation.
+```text
+maker-inventar-backup-….zip
+├── backup.json
+└── images/
+    └── <item-id>.jpg
+```
 
-## PWA / Offline-App-Shell
+`backup.json` enthält Kategorien, Lagerorte, Bauteile, Projekte und Projektpositionen. Bilder liegen separat im ZIP, nicht als Base64 im JSON. Cloudflare- und App-Zugangsdaten werden nie exportiert. Alte reine JSON-Backups mit Formatversion 1 bleiben importierbar.
 
-Docker- und Pages-Frontend enthalten Manifest, Service Worker, Apple Touch Icon, 192/512-Icons, Maskable-Icon und Offline-Fallback. App-Shell-Dateien werden vollständig vorgecached; externe CDN-Abhängigkeiten gibt es nicht.
+Im Local-Modus werden Bilder als Blob in IndexedDB gespeichert. Beim Restore wird die Datei zuerst validiert, die Anzahl der Datensätze angezeigt und zwischen Ersetzen/Zusammenführen gewählt. Vor einem lokalen Ersetzen wird ein Vollbackup des aktuellen Zustands angeboten. Auf iPhone wird beim Export bevorzugt die Web Share API verwendet; ansonsten erfolgt ein Download-Fallback.
 
-Die installierte PWA kann daher nach einem erfolgreichen Cache-Lauf ihre Oberfläche lokal starten. Im Pages-Server-Modus kann diese lokale App-Shell weiterhin direkt die Docker-API verwenden, auch wenn Pages vorübergehend ausfällt. Im Local-Modus liegen Fachdaten in IndexedDB.
+## Offline-App-Shell
 
-## Update-Lifecycle
+`service-worker.js` precacht mindestens:
 
-Service-Worker-Cache: `maker-inventar-pwa-v12`.
+- `index.html`
+- `app.js`, `app.css`, `db.js`, `providers.js`, `zip.js`
+- `config.json`
+- `manifest.webmanifest`
+- `offline.html`
+- alle PWA-Icons
 
-- neue Version wird installiert und vorbereitet
-- `skipWaiting()` wird **nicht** automatisch bei Installation aufgerufen
-- laufende Sitzung bleibt auf der alten Version
-- Update wird beim sicheren späteren Start aktiv oder per „Jetzt aktualisieren“ bewusst aktiviert
-- `controllerchange` löst nur bei einem ausdrücklich manuellen Update höchstens einen Reload aus
-- aktive Ansicht wird in `localStorage` erhalten
-- IndexedDB und Server-Zugangsdaten werden bei App-Updates nicht gelöscht
+Es gibt keine externen Laufzeit-CDNs. Nach erfolgreichem ersten Online-Lauf kann die installierte App daher aus dem lokalen Cache starten, wenn GitHub Pages vorübergehend nicht erreichbar ist.
 
-Bei jeder relevanten Frontendänderung müssen App-/Cache-Version gemeinsam erhöht werden.
+- Local-Modus: UI + IndexedDB funktionieren ohne Backend
+- Server-Modus: gecachte UI kann weiterhin direkt die Docker-API ansprechen
+- ist Docker nicht erreichbar, werden Schreibaktionen nicht als erfolgreich vorgetäuscht; v2 implementiert bewusst keine Offline-Schreibqueue
 
-## ZIP-/Git-Workflow
+## PWA-Update-Lifecycle
 
-Der Release-ZIP enthält bewusst **keine aktive `.github/`-Infrastruktur und keine `.gitignore`**. Diese Dateien werden repositoryseitig gepflegt und bei App-Releases nie ersetzt.
+Cache-Version: `maker-inventar-pwa-v12`.
 
-Der einmalig im Repository installierte Import-Workflow:
+- Browser/Client prüft auf neuen Service Worker
+- neue App-Shell wird im Hintergrund in einem neuen versionsbezogenen Cache vorbereitet
+- während der laufenden Sitzung wird **kein automatisches `skipWaiting()`** erzwungen
+- keine automatische `location.reload()`-Kette bei `activate`/`controllerchange`
+- „Jetzt aktualisieren“ setzt bewusst `SKIP_WAITING` und erlaubt genau einen Reload
+- aktive Hauptansicht wird in `localStorage` behalten
+- Local-IndexedDB und Server-Zugangsdaten werden von App-Updates nicht gelöscht
 
-1. akzeptiert genau ein neues Root-`*.zip`,
-2. prüft ZIP-Pfade und typische Secret-Dateien,
+Für jede neue Release-Version müssen `APP_VERSION`/Cache-Name in `service-worker.js`, `config.json` und Release-Dokumentation gemeinsam erhöht werden.
+
+## Verhalten bei Hosting-Ausfall
+
+Die App führt bei Pages-Builds gelegentlich einen expliziten Netzwerkcheck aus. Ist Pages nicht erreichbar, zeigt sie dezent an, dass die lokal installierte Version verwendet wird. Es erfolgt keine automatische Umleitung zur Docker-Oberfläche. Ein manueller Docker-Fallback kann über `dockerWebUrl` konfiguriert werden.
+
+## ZIP-Import und Deployment
+
+Der Release-ZIP enthält bewusst **keine aktive `.github/`-Infrastruktur und keine `.gitignore`**. Diese Dateien gehören dem Repository und bleiben über Releases hinweg bestehen.
+
+Der einmalig im Repository installierte Import-/Deploy-Workflow:
+
+1. reagiert auf genau ein neu hinzugefügtes Root-`*.zip`,
+2. validiert Pfade und typische Secret-Dateien,
 3. lehnt aktive Workflow-Dateien im ZIP ab,
-4. schützt `.git`, `.github/` und `.gitignore`,
-5. ersetzt nur App-/Release-Dateien,
+4. schützt `.github/`, `.gitignore` und `.git/` vollständig,
+5. ersetzt nur die eigentlichen App-/Release-Dateien,
 6. entfernt das ZIP,
-7. committet und pusht den neuen Stand.
+7. committet/pusht die neue Repository-Version,
+8. veröffentlicht GitHub Pages **im selben Workflow-Lauf**.
 
-Der Bot-Commit löst keinen erneuten Import aus; dadurch entsteht keine Commit-Schleife. Das Release-ZIP repräsentiert direkt das Repository-Root.
+Das ist absichtlich so gebaut: Ein normales `GITHUB_TOKEN` soll keine Workflow-Dateien während eines Release-Imports ändern müssen. Der durch `GITHUB_TOKEN` erzeugte Commit muss außerdem keinen zweiten Push-Workflow auslösen, weil der Pages-Deploy direkt im laufenden Import-Workflow erfolgt.
 
-## Pages-Kompatibilität
+Das ZIP repräsentiert direkt das Repository-Root; keine zusätzliche Ordnerhülle.
 
-Docker v12 ↔ Pages v12. Backupformat Version 3 ergänzt 3D-Projektdateien; Version 1 und 2 bleiben importierbar; v9 entfernt die Tags-Funktion aus UI, API-Ausgabe, CSV und neuen Backups. Bei Änderungen an API, Datenmodell, Provider, Backupformat oder Service Worker beide Pakete gemeinsam versionieren.
+## GitHub Pages Einrichtung
+
+Im Repository unter **Settings → Pages** als Source **GitHub Actions** verwenden. Danach kann ein neues Release-ZIP ins Root des Repositories hochgeladen werden; der Import-Workflow übernimmt den Rest.
 
 ## Bekannte Einschränkungen v9
 
-- keine echte bidirektionale Offline-Synchronisationsengine; Datenübertragung ist bewusst manuell
+- keine echte Offline-/Server-Synchronisationsengine
+- keine Konfliktauflösung nach Feldversionen; Merge arbeitet über stabile IDs
 - keine Barcode-/QR-Erfassung
-- keine automatischen Mouser/DigiKey/Octopart-Abfragen
 - ein Hauptbild pro Bauteil; noch keine Bildergalerie oder Datenblattverwaltung
-- keine Reservierung von Bestand zwischen mehreren gleichzeitig geplanten Projekten
-- Server-Modus bietet ohne echte Offline-Queue keine Offline-Schreiboperationen
-
-## Tests
-
-`python -m unittest discover -s tests -v`
-
-Zusätzlich vor Release: Python-Syntax, Flask-Routen/API, Migration/Restore, JavaScript-Syntax, Manifest/Service Worker, Local/Server Provider, CORS, iPhone-Layout und PWA-Lifecycle prüfen.
+- keine externe Lieferantensuche
+- iOS kann Website-Daten unter bestimmten Systembedingungen verwalten/löschen; regelmäßige lokale Backups bleiben wichtig
 
 ## v2 UI-Update
 
@@ -149,24 +151,26 @@ v2 richtet die iPhone-Oberfläche am freigegebenen Mockup-Stil aus: großer Head
 
 ### Release-ZIP, `.gitignore` und `.github/`
 
-Release-ZIPs enthalten absichtlich **keine `.gitignore` und keine aktive `.github/`-Workflow-Infrastruktur**. Der Import-Workflow schließt beide Bereiche zusätzlich bei `rsync --delete` aus. Damit bleiben eigene Ignore-Regeln und Workflows bei jedem App-Update unverändert.
+Release-ZIPs enthalten absichtlich **keine `.gitignore` und keine aktive `.github/`-Workflow-Infrastruktur**. Der Import-Workflow schließt beide Bereiche zusätzlich bei `rsync --delete` aus. Damit bleiben eigene Ignore-Regeln, Workflows und Repository-Einstellungen bei jedem App-Update unverändert.
 
-Für ein bestehendes Repository muss der bestehende Import-Workflow **einmalig manuell** in `.github/workflows/` installiert bzw. der bisherige Import-Workflow ersetzt werden. Danach werden normale Releases nur noch als ZIP hochgeladen.
+Für ein bestehendes Repository muss der bestehende Import-/Deploy-Workflow **einmalig manuell** in `.github/workflows/` installiert bzw. der bisherige Import-Workflow ersetzt werden. Danach werden normale App-Releases nur noch als ZIP hochgeladen.
 
 Für neue Repositories liegt `.gitignore.example` als Vorlage bei; die echte `.gitignore` wird bewusst nicht als Release-Datei ausgeliefert.
 
 
 ## UI-Feinschliff v5
 
-v5 ersetzt die bisherigen Unicode-Platzhalter in der Oberfläche durch ein vollständig lokales SVG-Iconset. Navigation, Status, Setup, Aktionen und Bauteil-Platzhalter verwenden nun eine einheitliche abgerundete Linienoptik ohne externe Abhängigkeiten.
+v5 ersetzt die bisherigen Unicode-Platzhalter in der Oberfläche durch ein vollständig lokales SVG-Iconset. Navigation, Status, Setup, Aktionen und Bauteil-Platzhalter verwenden nun eine einheitliche abgerundete Linienoptik ohne externe CDN-Abhängigkeit.
 
 ## Änderungen v9
 
-Die frühere Tags-Funktion wurde entfernt. Alte Tag-Werte werden nicht mehr angezeigt, durchsucht, über die API ausgegeben, in CSV exportiert oder in neue Backups übernommen. Alte Backups mit einem `tags`-Feld bleiben importierbar; das Feld wird ignoriert.
+Die frühere Tags-Funktion wurde entfernt. Alte Tags aus v6 werden nicht mehr angezeigt, durchsucht, exportiert oder in neue Datensätze übernommen. Alte Backups mit einem `tags`-Feld bleiben importierbar; das Feld wird ignoriert.
 
 ## Bauteilbilder
 
-Bauteile können ein optionales Hauptbild erhalten. Der gemeinsame Frontend-Code bietet Kamera und Fotobibliothek an und skaliert Bilder vor dem Upload auf maximal 1600 px. Serverseitig werden nur JPEG, PNG und WebP bis `IMAGE_MAX_BYTES` akzeptiert; neue PWA-Aufnahmen werden als JPEG gespeichert. Dateien liegen persistent unter `/app/data/uploads/items/`. Beim Löschen eines Bauteils wird das zugehörige Bild entfernt.
+Die App unterstützt ein optionales Hauptbild pro Bauteil. Auf iPhone stehen getrennte Aktionen für Kamera und Fotobibliothek zur Verfügung. Das Bild wird vor Speicherung clientseitig auf maximal 1600 px Kantenlänge skaliert und als JPEG neu erzeugt; dadurch werden typische EXIF-Metadaten nicht übernommen. Thumbnails erscheinen in Inventar-, Knapp- und Projektansichten.
+
+Local Provider: Bild-Blob in IndexedDB `item_images`. Server Provider: Upload über `/api/items/<id>/image`; Cloudflare-Header werden wie bei anderen API-Aufrufen gesetzt. Bilder werden beim bewussten Local↔Server-Transfer mit übertragen.
 
 ## Änderungen v9
 
@@ -174,7 +178,7 @@ Der Service-Worker-Lifecycle wurde gehärtet: Registrierung mit `updateViaCache:
 
 ## Änderungen v9
 
-Die Docker-Weboberfläche verwendet im Server-Modus nun immer `window.location.origin` für `/api/...`. Eine zuvor lokal gespeicherte Backend-URL wird im Docker-Build ignoriert. Cloudflare Service ID/Secret werden bei Same-Origin-Requests nicht gesendet und die entsprechenden Setup-Felder sind ausgeblendet. Damit funktioniert direkter LAN-Zugriff (z. B. `http://HOST:PORT`) ohne Backend-Konfiguration. `APP_URL` bleibt ausschließlich die öffentliche Basis für serverseitig erzeugte externe Links; `DOCKER_WEB_URL` bleibt der manuelle Fallback-Link.
+Der Pages-Build behält die frei konfigurierbare Backend-URL sowie Cloudflare-Service-Token. Die gemeinsame Provider-Codebasis erkennt den Docker-Build und erzwingt dort Same-Origin; gespeicherte Pages-/Server-Adressen können die Docker-Oberfläche dadurch nicht mehr beeinflussen.
 
 ## 3D-Druckdateien (seit v10)
 Projekte können mehrere STL-, 3MF-, STEP/STP-, OBJ-, G-Code- und SCAD-Dateien enthalten. Binärdateien liegen im Server-Modus unter `/app/data/uploads/projects/` und lokal als IndexedDB-Blob. Vollbackups enthalten sie ebenfalls.

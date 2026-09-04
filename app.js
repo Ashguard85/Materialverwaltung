@@ -2,10 +2,10 @@ import { LocalProvider, ServerProvider, saveServerSettings, validateBackup } fro
 import { getSecureSetting, clearServerCredentials } from './db.js';
 import { createZip, readZip } from './zip.js';
 
-const CLIENT_VERSION = 'v11';
+const CLIENT_VERSION = 'v12';
 
 const state = {
-  config: { appName: 'Maker Inventar', version: 'v11', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '', sameOriginServer: false, authEnabled: false },
+  config: { appName: 'Maker Inventar', version: 'v12', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '', sameOriginServer: false, authEnabled: false },
   mode: null,
   provider: null,
   data: { categories: [], locations: [], items: [], projects: [], project_items: [], project_files: [] },
@@ -23,6 +23,11 @@ const state = {
   projectImageChange: null,
   projectPreviewUrl: '',
   editingProjectHadImage: false,
+  updateWaitingWorker: null,
+  updateReloadIssued: false,
+  updateReloadTimer: null,
+  criticalOperations: 0,
+  setupDirty: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -605,6 +610,7 @@ async function saveConnection() {
     $('cf-client-secret').value = '';
     $('app-api-token').value = '';
     await loadServerSettingsIntoForm();
+    state.setupDirty = false;
     toast('Verbindung lokal auf diesem Gerät gespeichert.');
     if (state.mode === 'server') await loadData();
   } catch (error) { toast(error.message); }
@@ -614,6 +620,7 @@ async function testServer() {
   try {
     await saveServerSettings({ backendUrl: state.config.buildTarget === 'docker' ? '' : $('backend-url').value, dockerWebUrl: state.config.buildTarget === 'docker' ? '' : $('docker-web-url').value, cfClientId: state.config.buildTarget === 'docker' ? '' : $('cf-client-id').value, cfClientSecret: state.config.buildTarget === 'docker' ? '' : $('cf-client-secret').value, appApiToken: $('app-api-token').value });
     const result = await new ServerProvider(state.config).testConnection();
+    state.setupDirty = false;
     toast(result?.status === 'ok' ? 'Server erreichbar.' : 'Server antwortet.');
   } catch (error) { toast(error.message); }
 }
@@ -622,6 +629,7 @@ async function clearConnection() {
   if (!await confirmAction('Zugangsdaten löschen?', 'Backend URL, Cloudflare Service Token und optionaler App-Token werden nur auf diesem Gerät entfernt.', { dangerLabel: 'Zugangsdaten löschen' })) return;
   await clearServerCredentials();
   await loadServerSettingsIntoForm();
+  state.setupDirty = false;
   toast('Zugangsdaten gelöscht.');
 }
 
@@ -748,16 +756,43 @@ async function checkHosting() {
 
 const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const UPDATE_RECHECK_AFTER_FOCUS_MS = 5 * 60 * 1000;
+const UPDATE_RELOAD_KEY = 'maker-inventar-update-reload';
 
-function updateUiReady() {
+function beginCriticalOperation() { state.criticalOperations += 1; }
+function endCriticalOperation() { state.criticalOperations = Math.max(0, state.criticalOperations - 1); }
+async function withCriticalOperation(fn) {
+  beginCriticalOperation();
+  try { return await fn(); }
+  finally { endCriticalOperation(); }
+}
+
+function criticalUpdateReason() {
+  if (state.criticalOperations > 0) return 'Es läuft gerade ein Speichern, Upload, Import, Restore oder Datentransfer.';
+  if (document.querySelector('dialog[open]')) return 'Bitte zuerst den geöffneten Dialog schließen oder speichern.';
+  const selectedFile = [...document.querySelectorAll('input[type="file"]')].some(input => input.files?.length);
+  if (selectedFile) return 'Bitte zuerst die ausgewählte Datei verarbeiten oder entfernen.';
+  if (state.itemImageChange || state.projectImageChange) return 'Bitte zuerst die Bildänderung speichern oder verwerfen.';
+  if (state.setupDirty) return 'In den Server-Einstellungen gibt es noch nicht gespeicherte Änderungen.';
+  return '';
+}
+
+function markSetupDirty(event) {
+  const id = event.target?.id || '';
+  if (['backend-url','docker-web-url','cf-client-id','cf-client-secret','app-api-token'].includes(id)) state.setupDirty = true;
+}
+
+function updateUiReady(version = '') {
   state.updateReady = true;
+  state.updateWaitingWorker = state.swRegistration?.waiting || state.updateWaitingWorker;
   $('update-banner').classList.remove('hidden');
-  const remote = state.publishedVersion && state.publishedVersion !== CLIENT_VERSION ? ` ${state.publishedVersion}` : '';
+  const label = version || state.publishedVersion;
+  const remote = label && label !== CLIENT_VERSION ? ` ${label}` : '';
   $('update-status').textContent = `Neue Version${remote} verfügbar`;
 }
 
 function clearUpdateReady() {
   state.updateReady = false;
+  state.updateWaitingWorker = null;
   $('update-banner').classList.add('hidden');
 }
 
@@ -768,132 +803,196 @@ async function probePublishedVersion() {
     const version = (await response.text()).trim();
     if (/^v\d+(?:[.-][A-Za-z0-9]+)*$/.test(version)) state.publishedVersion = version;
     return version;
-  } catch {
-    return '';
+  } catch { return ''; }
+}
+
+function queryWorkerVersion(worker) {
+  return new Promise(resolve => {
+    if (!worker) return resolve('');
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(''), 1400);
+    channel.port1.onmessage = event => {
+      clearTimeout(timer);
+      resolve(String(event.data?.version || ''));
+    };
+    try { worker.postMessage({ type: 'GET_VERSION' }, [channel.port2]); }
+    catch { clearTimeout(timer); resolve(''); }
+  });
+}
+
+async function announceWaitingWorker(worker) {
+  if (!worker) return;
+  state.updateWaitingWorker = worker;
+  const version = await queryWorkerVersion(worker);
+  updateUiReady(version);
+}
+
+function waitForWorkerInstall(worker, timeoutMs = 12000) {
+  return new Promise(resolve => {
+    if (!worker) return resolve(null);
+    if (['installed','activated','redundant'].includes(worker.state)) return resolve(worker);
+    let done = false;
+    let timer = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      try { worker.removeEventListener('statechange', onState); } catch {}
+      resolve(worker);
+    };
+    const onState = () => { if (['installed','activated','redundant'].includes(worker.state)) finish(); };
+    worker.addEventListener('statechange', onState);
+    timer = setTimeout(finish, timeoutMs);
+  });
+}
+
+async function inspectServiceWorkerRegistration(registration, { waitForInstall = false } = {}) {
+  if (!registration) return '';
+
+  // Inspect a newer installing worker before an older waiting worker. This avoids
+  // stepping through intermediate releases when a newer version is already online.
+  if (registration.installing) {
+    $('update-status').textContent = 'Neueste Version wird im Hintergrund geladen …';
+    const worker = registration.installing;
+    if (waitForInstall) await waitForWorkerInstall(worker);
+    if (worker.state === 'redundant') {
+      $('update-status').textContent = 'Update konnte nicht vollständig installiert werden';
+      return 'failed';
+    }
+    if (registration.installing && !['installed','activated','redundant'].includes(worker.state)) return 'installing';
   }
+
+  if (registration.waiting) {
+    await announceWaitingWorker(registration.waiting);
+    return 'waiting';
+  }
+  return '';
+}
+
+async function checkServiceWorkerUpdate({ silent = false, force = false, waitForInstall = false } = {}) {
+  const registration = state.swRegistration;
+  if (!registration) throw new Error('Service Worker nicht verfügbar.');
+  if (!navigator.onLine) return '';
+  const now = Date.now();
+  if (!force && now - state.lastUpdateCheck < UPDATE_RECHECK_AFTER_FOCUS_MS) return '';
+  state.lastUpdateCheck = now;
+
+  if (!silent) $('update-status').textContent = 'Prüfung läuft …';
+  // Check hosting first, then ask the browser to update the worker. Do not activate
+  // a previously waiting release until this pass has had a chance to find a newer one.
+  const publishedVersion = await probePublishedVersion();
+  try { await registration.update(); }
+  catch { if (!silent) $('update-status').textContent = 'Update-Prüfung nicht verfügbar'; return 'error'; }
+
+  const result = await inspectServiceWorkerRegistration(registration, { waitForInstall });
+  if (result) return result;
+
+  if (publishedVersion && publishedVersion !== CLIENT_VERSION) {
+    $('update-status').textContent = `Neue Version ${publishedVersion} wird vorbereitet …`;
+    // VERSION can propagate a little earlier than service-worker.js on static hosting.
+    setTimeout(() => registration.update().catch(() => {}), 2500);
+    setTimeout(() => registration.update().catch(() => {}), 7500);
+    return 'pending';
+  }
+
+  if (!state.updateReady) $('update-status').textContent = 'Aktuell';
+  return '';
+}
+
+function reloadOnceForUpdate() {
+  if (state.updateReloadIssued) return;
+  let requested = false;
+  try { requested = sessionStorage.getItem(UPDATE_RELOAD_KEY) === '1'; } catch {}
+  if (!requested) return;
+  state.updateReloadIssued = true;
+  try { sessionStorage.removeItem(UPDATE_RELOAD_KEY); } catch {}
+  if (state.updateReloadTimer) clearTimeout(state.updateReloadTimer);
+  window.location.reload();
+}
+
+function activateWaitingWorker(worker, { startup = false } = {}) {
+  if (!worker) return false;
+  const blocked = criticalUpdateReason();
+  if (blocked) {
+    updateUiReady();
+    if (!startup) toast(blocked);
+    return false;
+  }
+  state.updateWaitingWorker = worker;
+  localStorage.setItem('maker-inventar-view', state.view);
+  try { sessionStorage.setItem(UPDATE_RELOAD_KEY, '1'); } catch {}
+  $('update-status').textContent = startup ? 'Geladene neue Version wird sicher aktiviert …' : 'Update wird sicher aktiviert …';
+
+  const onState = () => { if (worker.state === 'activated') reloadOnceForUpdate(); };
+  worker.addEventListener('statechange', onState);
+  try { worker.postMessage({ type: 'ACTIVATE_UPDATE', safeActivation: true }); }
+  catch { return false; }
+  if (worker.state === 'activated') reloadOnceForUpdate();
+
+  if (state.updateReloadTimer) clearTimeout(state.updateReloadTimer);
+  state.updateReloadTimer = setTimeout(() => {
+    try { sessionStorage.removeItem(UPDATE_RELOAD_KEY); } catch {}
+    $('update-status').textContent = 'Update ist geladen und wird beim nächsten sicheren Start übernommen.';
+  }, 10000);
+  return true;
 }
 
 function watchInstallingWorker(registration, worker) {
   if (!worker) return;
-  $('update-status').textContent = 'Update wird vorbereitet …';
-  worker.addEventListener('statechange', () => {
-    if (worker.state === 'installed') {
-      if (navigator.serviceWorker.controller) updateUiReady();
-      else $('update-status').textContent = 'Aktuell';
-    } else if (worker.state === 'redundant') {
-      $('update-status').textContent = 'Update konnte nicht vorbereitet werden';
-    }
+  $('update-status').textContent = 'Neueste Version wird im Hintergrund geladen …';
+  worker.addEventListener('statechange', async () => {
+    if (worker.state === 'installed' && navigator.serviceWorker.controller) await inspectServiceWorkerRegistration(registration);
+    if (worker.state === 'installed' && !navigator.serviceWorker.controller) $('update-status').textContent = 'Offline-Basis installiert';
+    if (worker.state === 'redundant') $('update-status').textContent = 'Update konnte nicht vollständig installiert werden';
   });
-}
-
-function activateWaitingWorker(worker, reason = 'manual') {
-  if (!worker) return false;
-  localStorage.setItem('maker-inventar-view', state.view);
-  sessionStorage.removeItem('maker-inventar-update-reloaded');
-  sessionStorage.setItem('maker-inventar-update-reload', reason);
-  $('update-status').textContent = 'Update wird aktiviert …';
-  worker.postMessage({ type: 'SKIP_WAITING' });
-  return true;
-}
-
-async function checkServiceWorkerUpdate({ silent = false } = {}) {
-  const registration = state.swRegistration;
-  if (!registration) throw new Error('Service Worker nicht verfügbar.');
-  state.lastUpdateCheck = Date.now();
-
-  if (registration.waiting) {
-    updateUiReady();
-    return;
-  }
-
-  if (!silent) $('update-status').textContent = 'Prüfung läuft …';
-  const publishedVersion = await probePublishedVersion();
-  await registration.update();
-
-  if (registration.waiting) {
-    updateUiReady();
-    return;
-  }
-  if (registration.installing) {
-    watchInstallingWorker(registration, registration.installing);
-    return;
-  }
-
-  if (publishedVersion && publishedVersion !== CLIENT_VERSION) {
-    $('update-status').textContent = `Neue Version ${publishedVersion} wird vorbereitet …`;
-    // CDN propagation can briefly expose VERSION before service-worker.js.
-    // One delayed retry avoids requiring another manual tap.
-    setTimeout(() => registration.update().catch(() => {}), 2500);
-    return;
-  }
-
-  if (!state.updateReady) $('update-status').textContent = 'Aktuell';
 }
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) { $('update-status').textContent = 'Service Worker nicht unterstützt'; return; }
   try {
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      const reason = sessionStorage.getItem('maker-inventar-update-reload');
-      if (reason && !sessionStorage.getItem('maker-inventar-update-reloaded')) {
-        sessionStorage.setItem('maker-inventar-update-reloaded', '1');
-        sessionStorage.removeItem('maker-inventar-update-reload');
-        window.location.reload();
-      }
-    });
+    navigator.serviceWorker.addEventListener('controllerchange', reloadOnceForUpdate);
 
     const registration = await navigator.serviceWorker.register('service-worker.js', {
-      scope: './',
-      updateViaCache: 'none'
+      scope: './', updateViaCache: 'none'
     });
     state.swRegistration = registration;
-
     registration.addEventListener('updatefound', () => watchInstallingWorker(registration, registration.installing));
 
-    // A waiting worker found during a fresh app launch was prepared in an earlier
-    // session. This is the safe restart point requested by the PWA update model.
-    if (registration.waiting && navigator.serviceWorker.controller) {
-      clearUpdateReady();
-      activateWaitingWorker(registration.waiting, 'startup');
-      return;
+    // Important: query hosting and finish any newer installation before deciding
+    // whether an already-waiting worker should be activated at startup.
+    const result = await checkServiceWorkerUpdate({ silent: true, force: true, waitForInstall: true });
+    if (result === 'waiting' && registration.waiting && navigator.serviceWorker.controller) {
+      activateWaitingWorker(registration.waiting, { startup: true });
+    } else {
+      await inspectServiceWorkerRegistration(registration);
     }
 
-    if (registration.waiting) updateUiReady();
-    else $('update-status').textContent = 'Aktuell';
-
-    window.addEventListener('online', () => checkServiceWorkerUpdate({ silent: true }).catch(() => {}));
+    window.addEventListener('online', () => checkServiceWorkerUpdate({ silent: true, force: true }).catch(() => {}));
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
-      if (Date.now() - state.lastUpdateCheck < UPDATE_RECHECK_AFTER_FOCUS_MS) return;
       checkServiceWorkerUpdate({ silent: true }).catch(() => {});
     });
-
-    // Check immediately after registration, then periodically while the app stays open.
-    checkServiceWorkerUpdate({ silent: true }).catch(() => {});
-    setInterval(() => checkServiceWorkerUpdate({ silent: true }).catch(() => {}), UPDATE_CHECK_INTERVAL_MS);
+    setInterval(() => checkServiceWorkerUpdate({ silent: true, force: true }).catch(() => {}), UPDATE_CHECK_INTERVAL_MS);
   } catch {
     $('update-status').textContent = 'Update-Prüfung nicht verfügbar';
   }
 }
 
 function applyUpdate() {
-  const worker = state.swRegistration?.waiting;
+  const worker = state.swRegistration?.waiting || state.updateWaitingWorker;
   if (!worker) {
     if (state.swRegistration?.installing) toast('Das Update wird noch vorbereitet.');
     else toast('Kein wartendes Update gefunden.');
     return;
   }
-  activateWaitingWorker(worker, 'manual');
+  activateWaitingWorker(worker, { startup: false });
 }
 
 async function checkUpdate() {
   try {
     if (!state.swRegistration) throw new Error('Service Worker nicht verfügbar.');
-    if (state.swRegistration.waiting) {
-      applyUpdate();
-      return;
-    }
-    await checkServiceWorkerUpdate({ silent: false });
+    const result = await checkServiceWorkerUpdate({ silent: false, force: true, waitForInstall: true });
+    if (result === 'waiting') toast('Neue Version ist vollständig geladen und bereit.');
   } catch (error) {
     $('update-status').textContent = 'Prüfung fehlgeschlagen';
     toast(error.message);
@@ -907,26 +1006,26 @@ function bindEvents() {
   $('add-project').addEventListener('click', () => openProject());
   $('search').addEventListener('input', renderInventory);
   $('filter-low').addEventListener('click', () => { state.lowOnly = !state.lowOnly; $('filter-low').setAttribute('aria-pressed', String(state.lowOnly)); renderInventory(); });
-  $('item-form').addEventListener('submit', saveItem);
+  $('item-form').addEventListener('submit', event => withCriticalOperation(() => saveItem(event)));
   $('item-dialog').addEventListener('close', () => { state.itemImageChange = null; revokeEditorPreview(); });
   $('item-photo-camera').addEventListener('click', () => $('item-photo-camera-input').click());
   $('item-photo-library').addEventListener('click', () => $('item-photo-library-input').click());
   $('item-photo-camera-input').addEventListener('change', async () => { const file = $('item-photo-camera-input').files?.[0]; if (file) await handleItemPhotoFile(file); $('item-photo-camera-input').value = ''; });
   $('item-photo-library-input').addEventListener('change', async () => { const file = $('item-photo-library-input').files?.[0]; if (file) await handleItemPhotoFile(file); $('item-photo-library-input').value = ''; });
   $('item-photo-remove').addEventListener('click', () => { state.itemImageChange = state.editingItemHadImage ? { action: 'delete' } : null; showItemPhotoBlob(null); $('item-photo-remove').classList.add('hidden'); });
-  $('project-form').addEventListener('submit', saveProject);
+  $('project-form').addEventListener('submit', event => withCriticalOperation(() => saveProject(event)));
   $('project-dialog').addEventListener('close', () => { state.projectImageChange=null; revokeProjectPreview(); });
   $('project-photo-camera').addEventListener('click', () => $('project-photo-camera-input').click());
   $('project-photo-library').addEventListener('click', () => $('project-photo-library-input').click());
   $('project-photo-camera-input').addEventListener('change', async () => { const file=$('project-photo-camera-input').files?.[0]; if(file) await handleProjectPhotoFile(file); $('project-photo-camera-input').value=''; });
   $('project-photo-library-input').addEventListener('change', async () => { const file=$('project-photo-library-input').files?.[0]; if(file) await handleProjectPhotoFile(file); $('project-photo-library-input').value=''; });
   $('project-photo-remove').addEventListener('click', () => { state.projectImageChange=state.editingProjectHadImage?{action:'delete'}:null; showProjectPhotoBlob(null); $('project-photo-remove').classList.add('hidden'); });
-  $('bom-form').addEventListener('submit', saveBom);
+  $('bom-form').addEventListener('submit', event => withCriticalOperation(() => saveBom(event)));
   $('delete-item').addEventListener('click', deleteCurrentItem);
   $('delete-project').addEventListener('click', deleteCurrentProject);
   $('add-project-item').addEventListener('click', () => openBom());
   $('add-project-file').addEventListener('click', () => $('project-file-input').click());
-  $('project-file-input').addEventListener('change', async () => { const files=$('project-file-input').files; if(files?.length) await uploadProjectFiles(files); $('project-file-input').value=''; });
+  $('project-file-input').addEventListener('change', async () => { const files=$('project-file-input').files; if(files?.length) await withCriticalOperation(() => uploadProjectFiles(files)); $('project-file-input').value=''; });
   $('toggle-project-edit').addEventListener('click', () => setProjectEditMode(true, false));
   $('cancel-project-edit').addEventListener('click', () => { const project = byId('projects', $('project-id').value); if (project) { $('project-name').value = project.name; $('project-status').value = project.status; $('project-notes').value = project.notes || ''; state.projectImageChange=null; revokeProjectPreview(); loadProjectPhotoEditor(project); setProjectEditMode(false, false); } });
   document.addEventListener('click', async event => {
@@ -948,16 +1047,18 @@ function bindEvents() {
   $('choose-server').addEventListener('click', () => switchMode('server'));
   $('first-local').addEventListener('click', () => switchMode('local', { firstRun: true }));
   $('first-server').addEventListener('click', async () => { await switchMode('server', { firstRun: true }); showView('setup'); });
-  $('save-server-settings').addEventListener('click', saveConnection);
-  $('test-server').addEventListener('click', testServer);
+  $('save-server-settings').addEventListener('click', () => withCriticalOperation(saveConnection));
+  $('test-server').addEventListener('click', () => withCriticalOperation(testServer));
   $('clear-server-settings').addEventListener('click', clearConnection);
-  $('export-backup').addEventListener('click', exportBackup);
+  $('export-backup').addEventListener('click', () => withCriticalOperation(exportBackup));
   $('import-backup').addEventListener('click', () => $('import-file').click());
-  $('import-file').addEventListener('change', async () => { const file = $('import-file').files?.[0]; if (file) await importSelectedFile(file); $('import-file').value=''; });
-  $('transfer-local-server').addEventListener('click', transferLocalToServer);
-  $('transfer-server-local').addEventListener('click', transferServerToLocal);
+  $('import-file').addEventListener('change', async () => { const file = $('import-file').files?.[0]; if (file) await withCriticalOperation(() => importSelectedFile(file)); $('import-file').value=''; });
+  $('transfer-local-server').addEventListener('click', () => withCriticalOperation(transferLocalToServer));
+  $('transfer-server-local').addEventListener('click', () => withCriticalOperation(transferServerToLocal));
   $('apply-update').addEventListener('click', applyUpdate);
   $('check-update').addEventListener('click', checkUpdate);
+  document.addEventListener('input', markSetupDirty, true);
+  document.addEventListener('change', markSetupDirty, true);
 }
 
 async function init() {
