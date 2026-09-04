@@ -32,7 +32,7 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(any(row["id"] == created["id"] for row in listing))
         backup = self.client.get("/api/export/backup").get_json()
         self.assertEqual(backup["format"], "maker-inventar-backup")
-        self.assertEqual(backup["version"], 2)
+        self.assertEqual(backup["version"], 4)
         preview = self.client.post("/api/import/preview", json=backup)
         self.assertEqual(preview.status_code, 200)
 
@@ -53,6 +53,45 @@ class SmokeTests(unittest.TestCase):
         deleted = self.client.delete(f"/api/items/{created['id']}/image")
         self.assertEqual(deleted.status_code, 204)
         self.assertEqual(self.client.get(f"/api/items/{created['id']}/image").status_code, 404)
+
+
+    def test_project_image_lifecycle(self):
+        project = self.client.post("/api/projects", json={"name": "Wetterstation"}).get_json()
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        uploaded = self.client.post(
+            f"/api/projects/{project['id']}/image",
+            data={"image": (io.BytesIO(png), "project.png")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(uploaded.status_code, 200)
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        row = next(row for row in bootstrap["projects"] if row["id"] == project["id"])
+        self.assertEqual(row["image_mime_type"], "image/png")
+        image = self.client.get(f"/api/projects/{project['id']}/image")
+        self.assertEqual(image.status_code, 200)
+        self.assertEqual(image.mimetype, "image/png")
+        deleted = self.client.delete(f"/api/projects/{project['id']}/image")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(self.client.get(f"/api/projects/{project['id']}/image").status_code, 404)
+
+    def test_project_file_lifecycle(self):
+        project = self.client.post("/api/projects", json={"name": "Gehäuse"}).get_json()
+        uploaded = self.client.post(
+            f"/api/projects/{project['id']}/files",
+            data={"file": (io.BytesIO(b"solid test\nendsolid test\n"), "case.stl")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(uploaded.status_code, 201)
+        meta = uploaded.get_json()
+        self.assertEqual(meta["file_type"], "stl")
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        self.assertTrue(any(row["id"] == meta["id"] for row in bootstrap["project_files"]))
+        downloaded = self.client.get(f"/api/project-files/{meta['id']}/content")
+        self.assertEqual(downloaded.status_code, 200)
+        self.assertIn(b"solid test", downloaded.data)
+        deleted = self.client.delete(f"/api/project-files/{meta['id']}")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(self.client.get(f"/api/project-files/{meta['id']}/content").status_code, 404)
 
     def test_cors_is_exact(self):
         os.environ["PWA_ALLOWED_ORIGIN"] = "https://app.example.com"

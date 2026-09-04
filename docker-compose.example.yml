@@ -16,5 +16,6 @@ services:
       APP_API_TOKEN: ${APP_API_TOKEN:-}
       BACKUP_KEEP: "50"
       IMAGE_MAX_BYTES: "4194304"
+      PROJECT_FILE_MAX_BYTES: "104857600"
       PWA_ALLOWED_ORIGIN: https://app.example.com
     restart: unless-stopped

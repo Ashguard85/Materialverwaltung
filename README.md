@@ -1,4 +1,4 @@
-# Maker Inventar · Docker · v9
+# Maker Inventar · Docker · v12
 
 Schlankes self-hosted Inventar für Elektronik, ESP/Arduino, Module und Maker-Projekte. **Docker ist die vollständige, eigenständig nutzbare Fullstack-App**. Das separate Pages-Paket ist nur ein zusätzlicher Client.
 
@@ -96,7 +96,7 @@ Die installierte PWA kann daher nach einem erfolgreichen Cache-Lauf ihre Oberfl�
 
 ## Update-Lifecycle
 
-Service-Worker-Cache: `maker-inventar-pwa-v9`.
+Service-Worker-Cache: `maker-inventar-pwa-v12`.
 
 - neue Version wird installiert und vorbereitet
 - `skipWaiting()` wird **nicht** automatisch bei Installation aufgerufen
@@ -126,7 +126,7 @@ Der Bot-Commit löst keinen erneuten Import aus; dadurch entsteht keine Commit-S
 
 ## Pages-Kompatibilität
 
-Docker v9 ↔ Pages v9. Backupformat Version 2 bleibt kompatibel; v9 entfernt die Tags-Funktion aus UI, API-Ausgabe, CSV und neuen Backups. Bei Änderungen an API, Datenmodell, Provider, Backupformat oder Service Worker beide Pakete gemeinsam versionieren.
+Docker v12 ↔ Pages v12. Backupformat Version 3 ergänzt 3D-Projektdateien; Version 1 und 2 bleiben importierbar; v9 entfernt die Tags-Funktion aus UI, API-Ausgabe, CSV und neuen Backups. Bei Änderungen an API, Datenmodell, Provider, Backupformat oder Service Worker beide Pakete gemeinsam versionieren.
 
 ## Bekannte Einschränkungen v9
 
@@ -175,3 +175,23 @@ Der Service-Worker-Lifecycle wurde gehärtet: Registrierung mit `updateViaCache:
 ## Änderungen v9
 
 Die Docker-Weboberfläche verwendet im Server-Modus nun immer `window.location.origin` für `/api/...`. Eine zuvor lokal gespeicherte Backend-URL wird im Docker-Build ignoriert. Cloudflare Service ID/Secret werden bei Same-Origin-Requests nicht gesendet und die entsprechenden Setup-Felder sind ausgeblendet. Damit funktioniert direkter LAN-Zugriff (z. B. `http://HOST:PORT`) ohne Backend-Konfiguration. `APP_URL` bleibt ausschließlich die öffentliche Basis für serverseitig erzeugte externe Links; `DOCKER_WEB_URL` bleibt der manuelle Fallback-Link.
+
+## 3D-Druckdateien (seit v10)
+Projekte können mehrere STL-, 3MF-, STEP/STP-, OBJ-, G-Code- und SCAD-Dateien enthalten. Binärdateien liegen im Server-Modus unter `/app/data/uploads/projects/` und lokal als IndexedDB-Blob. Vollbackups enthalten sie ebenfalls.
+
+
+## Projektbilder (seit v11)
+- Ein Hauptbild pro Projekt (Kamera/Fotobibliothek), Thumbnail in der Projektliste und Cover in der Detailansicht.
+- Projektbilder werden im Local-Modus in IndexedDB und im Server-Modus unter `/app/data/uploads/projects/<projekt-id>/cover.*` gespeichert.
+- Vollbackup/Restore und bewusste Local↔Server-Übertragung nehmen Projektbilder mit.
+
+## Neu in v12 – Update-Lifecycle
+
+- robusterer PWA-Update-Lifecycle nach iOS-/Home-Screen-Erfahrungen: Hosting wird vor Aktivierung eines wartenden Workers geprüft
+- installierende Worker werden vor wartenden Zwischenversionen ausgewertet; dadurch werden unnötige Versionssprünge vermieden
+- essenzielle und optionale App-Shell-Dateien sind getrennt; fehlende optionale Icons blockieren kein Update
+- App-Shell-Dateien werden beim Worker-Install mit `cache: reload` frisch geladen
+- regulär kein `clients.claim()`; nur der einmalige v11→v12-Übergang nutzt eine Kompatibilitätsbrücke, danach wechseln laufende Clients nur über kontrollierten Reload/Neustart
+- Updates werden während Speichern, Upload, Import/Restore, Datentransfer, offenen Dialogen oder ausgewählten Dateien nicht aktiviert
+- `/api/`, `/health`, Bilder und Projektdateien bleiben vollständig außerhalb des App-Shell-Caches
+- eine vorherige vollständige App-Shell-Version bleibt als Fallback erhalten

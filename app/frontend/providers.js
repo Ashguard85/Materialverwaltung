@@ -8,12 +8,17 @@ import {
   localGetItemImage,
   localPutItemImage,
   localDeleteItemImage,
+  localGetProjectImage,
+  localPutProjectImage,
+  localDeleteProjectImage,
+  localGetProjectFile,
+  localPutProjectFile,
   getSecureSetting,
   setSecureSetting,
 } from './db.js';
 
 export const BACKUP_FORMAT = 'maker-inventar-backup';
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 4;
 
 function now() { return new Date().toISOString(); }
 function id() { return crypto.randomUUID(); }
@@ -40,11 +45,12 @@ function stripImageMeta(data) {
 export function validateBackup(backup) {
   if (!backup || typeof backup !== 'object') throw new Error('Ungültige Backup-Datei.');
   if (backup.format !== BACKUP_FORMAT) throw new Error('Unbekanntes Backup-Format.');
-  if (![1, BACKUP_VERSION].includes(Number(backup.version))) throw new Error('Nicht unterstützte Backup-Version.');
+  if (![1, 2, 3, BACKUP_VERSION].includes(Number(backup.version))) throw new Error('Nicht unterstützte Backup-Version.');
   const data = backup.data;
   if (!data || typeof data !== 'object') throw new Error('Backup enthält keine Daten.');
   const counts = {};
   for (const store of STORES) {
+    if (store === 'project_files' && !Array.isArray(data[store]) && Number(backup.version) < 3) data[store] = [];
     if (!Array.isArray(data[store])) throw new Error(`Backup-Bereich ${store} fehlt.`);
     counts[store] = data[store].length;
   }
@@ -76,8 +82,9 @@ export class LocalProvider {
       base.value_text = text(row.value_text); base.manufacturer = text(row.manufacturer); base.part_number = text(row.part_number); base.package = text(row.package); base.source_url = text(row.source_url); base.notes = text(row.notes); delete base.tags;
       base.image_mime_type = text(row.image_mime_type); base.image_updated_at = text(row.image_updated_at);
     }
-    if (store === 'projects') { base.name = text(row.name); if (!base.name) throw new Error('Name ist erforderlich.'); base.status = text(row.status, 'planned') || 'planned'; base.notes = text(row.notes); }
+    if (store === 'projects') { base.name = text(row.name); if (!base.name) throw new Error('Name ist erforderlich.'); base.status = text(row.status, 'planned') || 'planned'; base.notes = text(row.notes); base.image_mime_type = text(row.image_mime_type); base.image_updated_at = text(row.image_updated_at); }
     if (store === 'project_items') { base.project_id = text(row.project_id); base.item_id = text(row.item_id); if (!base.project_id || !base.item_id) throw new Error('Projekt und Bauteil sind erforderlich.'); base.required_quantity = nonnegative(row.required_quantity, 1); base.notes = text(row.notes); }
+    if (store === 'project_files') { base.project_id = text(row.project_id); if (!base.project_id) throw new Error('Projekt ist erforderlich.'); base.name = text(row.name); if (!base.name) throw new Error('Dateiname ist erforderlich.'); base.file_type = text(row.file_type); base.mime_type = text(row.mime_type) || 'application/octet-stream'; base.size_bytes = nonnegative(row.size_bytes); base.description = text(row.description); }
     return base;
   }
   async getItemImage(itemId) { const row = await localGetItemImage(itemId); return row?.blob || null; }
@@ -90,6 +97,24 @@ export class LocalProvider {
     await localDeleteItemImage(itemId); const items = await localGetAll('items'); const item = items.find(row => row.id === itemId);
     if (item) { const updatedAt = now(); await localPut('items', this.normalize('items', { ...item, image_mime_type: '', image_updated_at: '', updated_at: updatedAt })); }
   }
+  async getProjectImage(projectId) { const row = await localGetProjectImage(projectId); return row?.blob || null; }
+  async setProjectImage(projectId, blob) {
+    const projects = await localGetAll('projects'); const project = projects.find(row => row.id === projectId); if (!project) throw new Error('Projekt nicht gefunden.');
+    const updatedAt = now(); const mime = blob.type || 'image/jpeg'; await localPutProjectImage(projectId, blob, mime, updatedAt);
+    const updated = this.normalize('projects', { ...project, image_mime_type: mime, image_updated_at: updatedAt, updated_at: updatedAt }); await localPut('projects', updated); return updated;
+  }
+  async deleteProjectImage(projectId) {
+    await localDeleteProjectImage(projectId); const projects = await localGetAll('projects'); const project = projects.find(row => row.id === projectId);
+    if (project) { const updatedAt = now(); await localPut('projects', this.normalize('projects', { ...project, image_mime_type: '', image_updated_at: '', updated_at: updatedAt })); }
+  }
+  async addProjectFile(projectId, file, description = '') {
+    const projects = await localGetAll('projects'); if (!projects.some(row => row.id === projectId)) throw new Error('Projekt nicht gefunden.');
+    const ts = now(); const record = this.normalize('project_files', { id: id(), project_id: projectId, name: file.name, file_type: (file.name.split('.').pop() || '').toLowerCase(), mime_type: file.type || 'application/octet-stream', size_bytes: file.size, description, created_at: ts, updated_at: ts });
+    await localPut('project_files', record); await localPutProjectFile(record.id, file, ts); return record;
+  }
+  async getProjectFile(fileId) { const row = await localGetProjectFile(fileId); return row?.blob || null; }
+  async setProjectFile(fileId, blob) { const files = await localGetAll('project_files'); const meta = files.find(row => row.id === fileId); if (!meta) throw new Error('Projektdatei nicht gefunden.'); await localPutProjectFile(fileId, blob, now()); return meta; }
+  async deleteProjectFile(fileId) { await localDelete('project_files', fileId); }
   async previewImport(backup) {
     const counts = validateBackup(backup); const current = await this.bootstrap(); const overwrites = {}; let overwriteCount = 0;
     for (const store of STORES) { const ids = new Set(current[store].map(row => row.id)); overwrites[store] = backup.data[store].filter(row => ids.has(row.id)).length; overwriteCount += overwrites[store]; }
@@ -98,15 +123,18 @@ export class LocalProvider {
     for (const row of backup.data.project_items) { const conflict = current.project_items.find(existing => existing.project_id === row.project_id && existing.item_id === row.item_id && existing.id !== row.id); if (conflict) hard.push({ table: 'project_items', type: 'pair', message: 'Projekt/Bauteil-Kombination existiert mit anderer ID' }); }
     return { valid: true, counts, conflicts: { overwrites, hard, hard_count: hard.length, overwrite_count: overwriteCount } };
   }
-  async exportData() { const data = stripImageMeta(await this.bootstrap()); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v9', includes_images: false, data }; }
+  async exportData() { const data = stripImageMeta(await this.bootstrap()); data.projects = data.projects.map(row => ({ ...row, image_mime_type: '', image_updated_at: '' })); return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now(), app_version: 'v12', includes_images: false, includes_project_files: false, data }; }
   async importData(backup, strategy = 'replace') {
     const preview = await this.previewImport(backup); const counts = preview.counts; const data = cloneData(backup.data); data.items = data.items.map(withoutLegacyTags);
     data.items = data.items.map(row => ({ ...row, image_mime_type: text(row.image_mime_type), image_updated_at: text(row.image_updated_at) }));
+    data.projects = data.projects.map(row => ({ ...row, image_mime_type: text(row.image_mime_type), image_updated_at: text(row.image_updated_at) }));
     if (strategy === 'replace') await localReplaceAll(data);
     else if (strategy === 'merge') {
       if (preview.conflicts.hard_count) throw new Error(`Merge abgebrochen: ${preview.conflicts.hard_count} Eindeutigkeitskonflikt(e) müssen zuerst gelöst werden.`);
       const current = await this.bootstrap(); const existing = new Map(current.items.map(row => [row.id, row]));
       data.items = data.items.map(row => { const old = existing.get(row.id); return old?.image_updated_at && !row.image_updated_at ? { ...row, image_mime_type: old.image_mime_type, image_updated_at: old.image_updated_at } : row; });
+      const existingProjects = new Map(current.projects.map(row => [row.id, row]));
+      data.projects = data.projects.map(row => { const old = existingProjects.get(row.id); return old?.image_updated_at && !row.image_updated_at ? { ...row, image_mime_type: old.image_mime_type, image_updated_at: old.image_updated_at } : row; });
       await localMergeAll(data);
     } else throw new Error('Unbekannte Importstrategie.');
     return { ok: true, strategy, counts };
@@ -140,10 +168,17 @@ export class ServerProvider {
   async create(store, input) { return this.request(`/api/${this.endpoint(store)}`, { method: 'POST', body: JSON.stringify(input) }); }
   async update(store, recordId, input) { return this.request(`/api/${this.endpoint(store)}/${encodeURIComponent(recordId)}`, { method: 'PATCH', body: JSON.stringify(input) }); }
   async delete(store, recordId) { return this.request(`/api/${this.endpoint(store)}/${encodeURIComponent(recordId)}`, { method: 'DELETE' }); }
-  endpoint(store) { return store === 'project_items' ? 'project-items' : store; }
+  endpoint(store) { return store === 'project_items' ? 'project-items' : store === 'project_files' ? 'project-files' : store; }
   async getItemImage(itemId) { return (await this.rawRequest(`/api/items/${encodeURIComponent(itemId)}/image`)).blob(); }
   async setItemImage(itemId, blob) { const form = new FormData(); form.append('image', blob, 'item.jpg'); return this.request(`/api/items/${encodeURIComponent(itemId)}/image`, { method: 'POST', body: form }); }
   async deleteItemImage(itemId) { return this.request(`/api/items/${encodeURIComponent(itemId)}/image`, { method: 'DELETE' }); }
+  async getProjectImage(projectId) { return (await this.rawRequest(`/api/projects/${encodeURIComponent(projectId)}/image`)).blob(); }
+  async setProjectImage(projectId, blob) { const form = new FormData(); form.append('image', blob, 'project.jpg'); return this.request(`/api/projects/${encodeURIComponent(projectId)}/image`, { method: 'POST', body: form }); }
+  async deleteProjectImage(projectId) { return this.request(`/api/projects/${encodeURIComponent(projectId)}/image`, { method: 'DELETE' }); }
+  async addProjectFile(projectId, file, description = '') { const form = new FormData(); form.append('file', file, file.name); form.append('description', description); return this.request(`/api/projects/${encodeURIComponent(projectId)}/files`, { method: 'POST', body: form }); }
+  async getProjectFile(fileId) { return (await this.rawRequest(`/api/project-files/${encodeURIComponent(fileId)}/content`)).blob(); }
+  async setProjectFile(fileId, blob) { const form = new FormData(); form.append('file', blob, 'project-file.bin'); return this.request(`/api/project-files/${encodeURIComponent(fileId)}/content`, { method: 'POST', body: form }); }
+  async deleteProjectFile(fileId) { return this.request(`/api/project-files/${encodeURIComponent(fileId)}`, { method: 'DELETE' }); }
   async exportData() { return this.request('/api/export/backup'); }
   async importData(backup, strategy = 'replace') { validateBackup(backup); return this.request('/api/import/restore', { method: 'POST', body: JSON.stringify({ backup, strategy }) }); }
   async previewImport(backup) { validateBackup(backup); return this.request('/api/import/preview', { method: 'POST', body: JSON.stringify(backup) }); }

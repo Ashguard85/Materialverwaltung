@@ -16,10 +16,10 @@ from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
-APP_VERSION = "v9"
+APP_VERSION = "v12"
 BACKUP_FORMAT = "maker-inventar-backup"
-BACKUP_VERSION = 2
-SCHEMA_VERSION = 2
+BACKUP_VERSION = 4
+SCHEMA_VERSION = 4
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
@@ -27,6 +27,7 @@ DB_PATH = DATA_DIR / "app.sqlite"
 BACKUP_DIR = DATA_DIR / "backups"
 UPLOAD_DIR = DATA_DIR / "uploads"
 ITEM_IMAGE_DIR = UPLOAD_DIR / "items"
+PROJECT_FILE_DIR = UPLOAD_DIR / "projects"
 
 app = Flask(__name__, static_folder=None)
 app.config["JSON_SORT_KEYS"] = False
@@ -60,6 +61,7 @@ def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     ITEM_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    PROJECT_FILE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def connect_db() -> sqlite3.Connection:
@@ -87,7 +89,7 @@ def backup_database(reason: str = "manual") -> Path | None:
     finally:
         dst.close()
         src.close()
-    if ITEM_IMAGE_DIR.exists() and any(ITEM_IMAGE_DIR.iterdir()):
+    if UPLOAD_DIR.exists() and any(path.is_file() for path in UPLOAD_DIR.rglob('*')):
         archive_base = BACKUP_DIR / f"uploads-{stamp}-{safe_reason}"
         shutil.make_archive(str(archive_base), "zip", root_dir=UPLOAD_DIR)
     prune_backups()
@@ -184,7 +186,15 @@ def migrate() -> None:
         if current < 2:
             conn.execute("ALTER TABLE items ADD COLUMN image_mime_type TEXT NOT NULL DEFAULT ''")
             conn.execute("ALTER TABLE items ADD COLUMN image_updated_at TEXT NOT NULL DEFAULT ''")
-            conn.execute("PRAGMA user_version=2")
+            conn.execute("PRAGMA user_version=2"); current = 2
+        if current < 3:
+            conn.executescript('''CREATE TABLE project_files (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, name TEXT NOT NULL, file_type TEXT NOT NULL DEFAULT '', mime_type TEXT NOT NULL DEFAULT 'application/octet-stream', size_bytes INTEGER NOT NULL DEFAULT 0 CHECK(size_bytes >= 0), description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX idx_project_files_project ON project_files(project_id);''')
+            conn.execute("PRAGMA user_version=3")
+            current = 3
+        if current < 4:
+            conn.execute("ALTER TABLE projects ADD COLUMN image_mime_type TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE projects ADD COLUMN image_updated_at TEXT NOT NULL DEFAULT ''")
+            conn.execute("PRAGMA user_version=4")
         conn.commit()
 
 
@@ -358,8 +368,9 @@ def bootstrap():
                 "categories": fetch_all(conn, "categories"),
                 "locations": fetch_all(conn, "locations"),
                 "items": fetch_public_items(conn),
-                "projects": fetch_all(conn, "projects"),
+                "projects": projects,
                 "project_items": fetch_all(conn, "project_items"),
+                "project_files": fetch_all(conn, "project_files"),
             }
         )
 
@@ -594,12 +605,14 @@ def create_project():
         "name": require_name(data),
         "status": clean_text(data.get("status", "planned"), 30) or "planned",
         "notes": clean_text(data.get("notes", ""), 5000),
+        "image_mime_type": "",
+        "image_updated_at": "",
         "created_at": ts,
         "updated_at": ts,
     }
     with connect_db() as conn:
         conn.execute(
-            "INSERT INTO projects(id,name,status,notes,created_at,updated_at) VALUES(:id,:name,:status,:notes,:created_at,:updated_at)",
+            "INSERT INTO projects(id,name,status,notes,image_mime_type,image_updated_at,created_at,updated_at) VALUES(:id,:name,:status,:notes,:image_mime_type,:image_updated_at,:created_at,:updated_at)",
             record,
         )
         conn.commit()
@@ -629,6 +642,83 @@ def update_project(record_id: str):
     return jsonify(row_dict(row))
 
 
+def project_storage_dir(project_id: str)->Path:
+    safe=re.sub(r"[^A-Za-z0-9_-]","_",project_id)[:80] or hashlib.sha256(project_id.encode()).hexdigest()[:24]
+    return PROJECT_FILE_DIR/safe
+
+def project_image_path(project_id: str, mime_type: str) -> Path:
+    suffix = IMAGE_MIME_SUFFIX.get(mime_type)
+    if not suffix:
+        raise ValueError("Nicht unterstütztes Bildformat")
+    return project_storage_dir(project_id) / f"cover{suffix}"
+
+def delete_project_image_files(project_id: str) -> None:
+    directory = project_storage_dir(project_id)
+    if not directory.exists():
+        return
+    for candidate in directory.glob("cover.*"):
+        if candidate.is_file():
+            candidate.unlink(missing_ok=True)
+
+@app.get("/api/projects/<record_id>/image")
+def get_project_image(record_id: str):
+    with connect_db() as conn:
+        project = conn.execute("SELECT image_mime_type,image_updated_at FROM projects WHERE id=?", (record_id,)).fetchone()
+    if not project or not project["image_mime_type"]:
+        return jsonify({"error": "Kein Projektbild hinterlegt"}), 404
+    path = project_image_path(record_id, project["image_mime_type"])
+    if not path.exists():
+        return jsonify({"error": "Projektbild fehlt"}), 404
+    response = send_file(path, mimetype=project["image_mime_type"], conditional=True, max_age=0)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+@app.post("/api/projects/<record_id>/image")
+def upload_project_image(record_id: str):
+    max_bytes = max(200_000, int(os.environ.get("IMAGE_MAX_BYTES", str(4 * 1024 * 1024))))
+    if request.content_length and request.content_length > max_bytes + 512_000:
+        raise ValueError("Bilddatei ist zu groß")
+    upload = request.files.get("image")
+    if not upload:
+        raise ValueError("Bilddatei fehlt")
+    data = upload.stream.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError("Bilddatei ist zu groß")
+    mime_type = sniff_image_mime(data)
+    if not mime_type:
+        raise ValueError("Nur JPEG, PNG oder WebP sind erlaubt")
+    with connect_db() as conn:
+        if not conn.execute("SELECT 1 FROM projects WHERE id=?", (record_id,)).fetchone():
+            return jsonify({"error": "Nicht gefunden"}), 404
+        directory = project_storage_dir(record_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        delete_project_image_files(record_id)
+        target = project_image_path(record_id, mime_type)
+        temp = target.with_suffix(target.suffix + ".tmp")
+        temp.write_bytes(data)
+        temp.replace(target)
+        updated_at = now_iso()
+        conn.execute("UPDATE projects SET image_mime_type=?,image_updated_at=?,updated_at=? WHERE id=?", (mime_type, updated_at, updated_at, record_id))
+        conn.commit()
+    return jsonify({"ok": True, "project_id": record_id, "mime_type": mime_type, "updated_at": updated_at})
+
+@app.delete("/api/projects/<record_id>/image")
+def delete_project_image(record_id: str):
+    with connect_db() as conn:
+        if not conn.execute("SELECT 1 FROM projects WHERE id=?", (record_id,)).fetchone():
+            return jsonify({"error": "Nicht gefunden"}), 404
+        delete_project_image_files(record_id)
+        updated_at = now_iso()
+        conn.execute("UPDATE projects SET image_mime_type='',image_updated_at='',updated_at=? WHERE id=?", (updated_at, record_id))
+        conn.commit()
+    return Response(status=204)
+
+
+PROJECT_FILE_EXTENSIONS={"stl","3mf","step","stp","obj","gcode","scad"}
+def project_file_path(project_id: str,file_id: str,file_type: str)->Path:
+    safe_id=re.sub(r"[^A-Za-z0-9_-]","_",file_id)[:80]
+    return project_storage_dir(project_id)/f"{safe_id}.{file_type}"
+
 @app.delete("/api/projects/<record_id>")
 def delete_project(record_id: str):
     with connect_db() as conn:
@@ -636,8 +726,60 @@ def delete_project(record_id: str):
         conn.commit()
     if not result.rowcount:
         return jsonify({"error": "Nicht gefunden"}), 404
+    shutil.rmtree(project_storage_dir(record_id), ignore_errors=True)
     return Response(status=204)
 
+
+@app.get("/api/projects/<project_id>/files")
+def list_project_files(project_id: str):
+    with connect_db() as conn:
+        rows=conn.execute("SELECT * FROM project_files WHERE project_id=? ORDER BY updated_at DESC",(project_id,)).fetchall()
+    return jsonify([row_dict(r) for r in rows])
+
+@app.post("/api/projects/<project_id>/files")
+def upload_project_file(project_id: str):
+    max_bytes=max(1_000_000,int(os.environ.get("PROJECT_FILE_MAX_BYTES",str(100*1024*1024))))
+    upload=request.files.get("file")
+    if not upload: raise ValueError("Datei fehlt")
+    name=Path(upload.filename or "").name.strip(); ext=name.rsplit(".",1)[-1].lower() if "." in name else ""
+    if ext not in PROJECT_FILE_EXTENSIONS: raise ValueError("Erlaubt sind STL, 3MF, STEP/STP, OBJ, G-Code und SCAD")
+    data=upload.stream.read(max_bytes+1)
+    if len(data)>max_bytes: raise ValueError("Projektdatei ist zu groß")
+    with connect_db() as conn:
+        if not conn.execute("SELECT 1 FROM projects WHERE id=?",(project_id,)).fetchone(): return jsonify({"error":"Projekt nicht gefunden"}),404
+        ts=now_iso(); rec={"id":new_id(),"project_id":project_id,"name":name,"file_type":ext,"mime_type":"application/octet-stream","size_bytes":len(data),"description":clean_text(request.form.get("description",""),500),"created_at":ts,"updated_at":ts}
+        d=project_storage_dir(project_id); d.mkdir(parents=True,exist_ok=True); target=project_file_path(project_id,rec["id"],ext); target.write_bytes(data)
+        try: conn.execute("INSERT INTO project_files(id,project_id,name,file_type,mime_type,size_bytes,description,created_at,updated_at) VALUES(:id,:project_id,:name,:file_type,:mime_type,:size_bytes,:description,:created_at,:updated_at)",rec); conn.commit()
+        except Exception: target.unlink(missing_ok=True); raise
+    return jsonify(rec),201
+
+@app.get("/api/project-files/<file_id>/content")
+def download_project_file(file_id: str):
+    with connect_db() as conn: row=conn.execute("SELECT * FROM project_files WHERE id=?",(file_id,)).fetchone()
+    if not row: return jsonify({"error":"Projektdatei nicht gefunden"}),404
+    path=project_file_path(row["project_id"],row["id"],row["file_type"])
+    if not path.exists(): return jsonify({"error":"Dateiinhalt fehlt"}),404
+    response=send_file(path,mimetype=row["mime_type"],as_attachment=True,download_name=row["name"],conditional=True,max_age=0); response.headers["Cache-Control"]="private, no-store"; return response
+
+@app.post("/api/project-files/<file_id>/content")
+def restore_project_file_content(file_id: str):
+    max_bytes=max(1_000_000,int(os.environ.get("PROJECT_FILE_MAX_BYTES",str(100*1024*1024)))); upload=request.files.get("file")
+    if not upload: raise ValueError("Datei fehlt")
+    data=upload.stream.read(max_bytes+1)
+    if len(data)>max_bytes: raise ValueError("Projektdatei ist zu groß")
+    with connect_db() as conn:
+        row=conn.execute("SELECT * FROM project_files WHERE id=?",(file_id,)).fetchone()
+        if not row: return jsonify({"error":"Projektdatei nicht gefunden"}),404
+        d=project_storage_dir(row["project_id"]); d.mkdir(parents=True,exist_ok=True); project_file_path(row["project_id"],row["id"],row["file_type"]).write_bytes(data); ts=now_iso(); conn.execute("UPDATE project_files SET size_bytes=?,updated_at=? WHERE id=?",(len(data),ts,file_id)); conn.commit(); row=conn.execute("SELECT * FROM project_files WHERE id=?",(file_id,)).fetchone()
+    return jsonify(row_dict(row))
+
+@app.delete("/api/project-files/<file_id>")
+def delete_project_file(file_id: str):
+    with connect_db() as conn:
+        row=conn.execute("SELECT * FROM project_files WHERE id=?",(file_id,)).fetchone()
+        if not row: return jsonify({"error":"Projektdatei nicht gefunden"}),404
+        conn.execute("DELETE FROM project_files WHERE id=?",(file_id,)); conn.commit()
+    project_file_path(row["project_id"],row["id"],row["file_type"]).unlink(missing_ok=True); return Response(status=204)
 
 @app.get("/api/project-items")
 def list_project_items():
@@ -711,6 +853,10 @@ def build_backup(conn: sqlite3.Connection) -> dict[str, Any]:
         item.pop("tags", None)
         item["image_mime_type"] = ""
         item["image_updated_at"] = ""
+    projects = fetch_all(conn, "projects")
+    for project in projects:
+        project["image_mime_type"] = ""
+        project["image_updated_at"] = ""
     return {
         "format": BACKUP_FORMAT,
         "version": BACKUP_VERSION,
@@ -723,6 +869,7 @@ def build_backup(conn: sqlite3.Connection) -> dict[str, Any]:
             "items": items,
             "projects": fetch_all(conn, "projects"),
             "project_items": fetch_all(conn, "project_items"),
+            "project_files": fetch_all(conn, "project_files"),
         },
     }
 
@@ -769,12 +916,14 @@ def export_items_csv():
 def validate_backup(payload: dict[str, Any]) -> dict[str, Any]:
     if payload.get("format") != BACKUP_FORMAT:
         raise ValueError("Unbekanntes Backup-Format")
-    if int(payload.get("version", -1)) not in {1, BACKUP_VERSION}:
+    if int(payload.get("version", -1)) not in {1, 2, 3, BACKUP_VERSION}:
         raise ValueError("Nicht unterstützte Backup-Version")
     data = payload.get("data")
     if not isinstance(data, dict):
         raise ValueError("Backup enthält keine gültigen Daten")
     required = ["categories", "locations", "items", "projects", "project_items"]
+    if int(payload.get("version",1)) >= 3: required.append("project_files")
+    elif "project_files" not in data: data["project_files"]=[]
     for key in required:
         if not isinstance(data.get(key), list):
             raise ValueError(f"Backup-Bereich {key} fehlt oder ist ungültig")
@@ -784,13 +933,14 @@ def validate_backup(payload: dict[str, Any]) -> dict[str, Any]:
         "items": len(data["items"]),
         "projects": len(data["projects"]),
         "project_items": len(data["project_items"]),
+        "project_files": len(data.get("project_files", [])),
     }
 
 
 def detect_import_conflicts(conn: sqlite3.Connection, data: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     overwrites = {}
     hard: list[dict[str, str]] = []
-    for table in ["categories", "locations", "items", "projects", "project_items"]:
+    for table in ["categories", "locations", "items", "projects", "project_items", "project_files"]:
         ids = [str(row.get("id", "")) for row in data.get(table, []) if row.get("id")]
         if ids:
             placeholders = ",".join("?" for _ in ids)
@@ -837,7 +987,7 @@ def normalize_import_record(record: dict[str, Any], table: str) -> dict[str, Any
 
 
 def restore_replace(conn: sqlite3.Connection, data: dict[str, list[dict[str, Any]]]) -> None:
-    for table in ["project_items", "projects", "items", "locations", "categories"]:
+    for table in ["project_files", "project_items", "projects", "items", "locations", "categories"]:
         conn.execute(f"DELETE FROM {table}")
     insert_all(conn, data, replace=False)
 
@@ -847,21 +997,23 @@ def insert_all(conn: sqlite3.Connection, data: dict[str, list[dict[str, Any]]], 
         "categories": ["id", "name", "created_at", "updated_at"],
         "locations": ["id", "name", "created_at", "updated_at"],
         "items": ["id", "name", "category_id", "location_id", "quantity", "min_quantity", "unit", "value_text", "manufacturer", "part_number", "package", "source_url", "notes", "image_mime_type", "image_updated_at", "created_at", "updated_at"],
-        "projects": ["id", "name", "status", "notes", "created_at", "updated_at"],
+        "projects": ["id", "name", "status", "notes", "image_mime_type", "image_updated_at", "created_at", "updated_at"],
         "project_items": ["id", "project_id", "item_id", "required_quantity", "notes", "created_at", "updated_at"],
+        "project_files": ["id", "project_id", "name", "file_type", "mime_type", "size_bytes", "description", "created_at", "updated_at"],
     }
     defaults = {
         "items": {"quantity": 0, "min_quantity": 0, "unit": "Stk", "value_text": "", "manufacturer": "", "part_number": "", "package": "", "source_url": "", "notes": "", "image_mime_type": "", "image_updated_at": "", "category_id": None, "location_id": None},
-        "projects": {"status": "planned", "notes": ""},
+        "projects": {"status": "planned", "notes": "", "image_mime_type": "", "image_updated_at": ""},
         "project_items": {"required_quantity": 1, "notes": ""},
+        "project_files": {"file_type":"", "mime_type":"application/octet-stream","size_bytes":0,"description":""},
     }
-    for table in ["categories", "locations", "items", "projects", "project_items"]:
+    for table in ["categories", "locations", "items", "projects", "project_items", "project_files"]:
         columns = allowed_columns[table]
         for raw in data[table]:
             rec = normalize_import_record(raw, table)
             for key, value in defaults.get(table, {}).items():
                 rec.setdefault(key, value)
-            if table in {"categories", "locations", "items", "projects"}:
+            if table in {"categories", "locations", "items", "projects", "project_files"}:
                 rec["name"] = require_name(rec)
             values = {k: rec.get(k) for k in columns}
             placeholders = ",".join(f":{k}" for k in columns)
@@ -870,8 +1022,8 @@ def insert_all(conn: sqlite3.Connection, data: dict[str, list[dict[str, Any]]], 
                 for k in columns:
                     if k == "id":
                         continue
-                    if table == "items" and k in {"image_mime_type", "image_updated_at"}:
-                        update_parts.append(f"{k}=CASE WHEN excluded.{k}='' THEN items.{k} ELSE excluded.{k} END")
+                    if table in {"items", "projects"} and k in {"image_mime_type", "image_updated_at"}:
+                        update_parts.append(f"{k}=CASE WHEN excluded.{k}='' THEN {table}.{k} ELSE excluded.{k} END")
                     else:
                         update_parts.append(f"{k}=excluded.{k}")
                 updates = ",".join(update_parts)
@@ -911,8 +1063,8 @@ def import_restore():
             raise
     if strategy == "replace":
         for path in ITEM_IMAGE_DIR.glob("*"):
-            if path.is_file():
-                path.unlink(missing_ok=True)
+            if path.is_file(): path.unlink(missing_ok=True)
+        shutil.rmtree(PROJECT_FILE_DIR, ignore_errors=True); PROJECT_FILE_DIR.mkdir(parents=True, exist_ok=True)
     return jsonify({"ok": True, "strategy": strategy, "counts": counts})
 
 

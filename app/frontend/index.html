@@ -56,6 +56,7 @@
     <symbol id="i-case" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 5v-1h10v1M8 10h8"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7.5h3l1.5-2h7l1.5 2h3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="3.5"/></symbol>
     <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9" r="1.5"/><path d="m5 17 4.5-4.5 3.2 3.2 2.3-2.3 4 3.6"/></symbol>
+    <symbol id="i-file-3d" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5"/><path d="m8 12 4-2 4 2v4l-4 2-4-2v-4Z"/><path d="m8 12 4 2 4-2M12 14v4"/></symbol>
     <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4v-9.5Z"/><path d="M9 20v-6h6v6"/></symbol>
   </svg>
   <div id="app" class="app-shell">
@@ -203,7 +204,7 @@
           <section class="settings-card">
             <h2>App-Version & Updates</h2>
             <div class="version-row"><span class="version-info"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg><span><small>App-Version</small><strong id="app-version">–</strong></span></span><span id="update-status" class="status-pill">Wird geprüft …</span></div>
-            <button id="check-update" class="secondary-button full update-button" type="button"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg><span>Jetzt aktualisieren / prüfen</span></button>
+            <button id="check-update" class="secondary-button full update-button" type="button"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg><span>Auf Updates prüfen</span></button>
             <a id="docker-fallback" class="secondary-button full link-button hidden" href="#" target="_blank" rel="noopener"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-external"></use></svg><span>Docker-Weboberfläche öffnen</span></a>
           </section>
         </div>
@@ -277,6 +278,7 @@
       <input id="project-id" type="hidden">
 
       <section id="project-overview" class="project-overview hidden">
+        <div id="project-cover" class="project-cover"><img id="project-cover-img" alt="Projektbild" class="hidden"><span id="project-cover-placeholder" class="project-cover-placeholder"><svg class="ui-icon" aria-hidden="true"><use href="#i-image"></use></svg></span></div>
         <h3 id="project-display-name" class="project-display-name"></h3>
         <div id="project-detail-progress" class="project-detail-progress"></div>
         <div id="project-bom-list" class="project-parts-list"></div>
@@ -284,10 +286,22 @@
           <button id="add-project-item" type="button" class="project-action"><span class="action-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg></span><strong>Bauteil hinzufügen</strong><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
           <button id="toggle-project-edit" type="button" class="project-action"><span class="action-icon"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg></span><strong>Projekt bearbeiten</strong><span class="chevron"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#i-chevron-right"></use></svg></span></button>
         </div>
+        <section class="project-files-card">
+          <div class="project-files-head"><div><p class="eyebrow">3D-Druck</p><h3>3D-Druckdateien</h3></div><button id="add-project-file" class="round-secondary-button" type="button" aria-label="3D-Datei hinzufügen"><svg class="ui-icon" aria-hidden="true"><use href="#i-plus"></use></svg></button></div>
+          <div id="project-files-list" class="project-files-list"></div>
+          <p class="muted project-files-hint">STL, 3MF, STEP/STP, OBJ, G-Code oder SCAD. G-Code ist drucker- und profilabhängig.</p>
+          <input id="project-file-input" class="hidden" type="file" multiple accept=".stl,.3mf,.step,.stp,.obj,.gcode,.scad">
+        </section>
       </section>
 
       <section id="project-edit-fields" class="project-edit-fields">
         <h3>Projekt bearbeiten</h3>
+        <div class="project-photo-editor">
+          <div class="project-photo-preview"><img id="project-photo-img" alt="Projektbild" class="hidden"><span id="project-photo-placeholder" class="project-photo-placeholder"><svg class="ui-icon" aria-hidden="true"><use href="#i-image"></use></svg></span></div>
+          <div class="item-photo-copy"><strong>Projektbild</strong><small>Foto vom Aufbau, Renderbild oder fertigen Projekt. Wird vor dem Speichern automatisch verkleinert.</small><div class="photo-actions"><button id="project-photo-camera" class="secondary-button compact-button" type="button"><svg class="ui-icon"><use href="#i-camera"></use></svg>Kamera</button><button id="project-photo-library" class="secondary-button compact-button" type="button"><svg class="ui-icon"><use href="#i-image"></use></svg>Fotos</button><button id="project-photo-remove" class="secondary-button compact-button danger-text hidden" type="button"><svg class="ui-icon"><use href="#i-trash"></use></svg>Entfernen</button></div></div>
+          <input id="project-photo-camera-input" class="hidden" type="file" accept="image/*" capture="environment">
+          <input id="project-photo-library-input" class="hidden" type="file" accept="image/*">
+        </div>
         <div class="form-grid">
           <label class="span-2">Name<input id="project-name" type="text" maxlength="180" required placeholder="z. B. Wetterstation Balkon"></label>
           <label class="span-2">Status<select id="project-status"><option value="planned">Geplant</option><option value="active">Aktiv</option><option value="done">Fertig</option></select></label>
