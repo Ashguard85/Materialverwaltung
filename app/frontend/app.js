@@ -2,10 +2,10 @@ import { LocalProvider, ServerProvider, saveServerSettings, validateBackup } fro
 import { getSecureSetting, clearServerCredentials } from './db.js';
 import { createZip, readZip } from './zip.js';
 
-const CLIENT_VERSION = 'v12';
+const CLIENT_VERSION = 'v13';
 
 const state = {
-  config: { appName: 'Maker Inventar', version: 'v12', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '', sameOriginServer: false, authEnabled: false },
+  config: { appName: 'Maker Inventar', version: 'v13', buildTarget: 'pages', defaultMode: null, defaultServerUrl: '', dockerWebUrl: '', sameOriginServer: false, authEnabled: false },
   mode: null,
   provider: null,
   data: { categories: [], locations: [], items: [], projects: [], project_items: [], project_files: [] },

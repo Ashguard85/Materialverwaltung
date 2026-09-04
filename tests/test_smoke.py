@@ -25,6 +25,14 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "ok")
 
+    def test_bootstrap(self):
+        response = self.client.get("/api/bootstrap")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        for key in ["categories", "locations", "items", "projects", "project_items", "project_files"]:
+            self.assertIn(key, payload)
+            self.assertIsInstance(payload[key], list)
+
     def test_crud_and_backup(self):
         created = self.client.post("/api/items", json={"name": "ESP32", "quantity": 3}).get_json()
         self.assertEqual(created["name"], "ESP32")

@@ -15,8 +15,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 from flask import Flask, Response, jsonify, request, send_file, send_from_directory
+from werkzeug.exceptions import HTTPException
 
-APP_VERSION = "v12"
+APP_VERSION = "v13"
 BACKUP_FORMAT = "maker-inventar-backup"
 BACKUP_VERSION = 4
 SCHEMA_VERSION = 4
@@ -320,6 +321,16 @@ def handle_404(_exc):
     return send_from_directory(FRONTEND_DIR, "index.html")
 
 
+@app.errorhandler(Exception)
+def handle_unexpected_error(exc: Exception):
+    if isinstance(exc, HTTPException):
+        return exc
+    app.logger.exception("Unhandled error: %s %s", request.method, request.path)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Interner Serverfehler"}), 500
+    return Response("Interner Serverfehler", status=500, mimetype="text/plain")
+
+
 @app.get("/health")
 def health():
     try:
@@ -368,7 +379,7 @@ def bootstrap():
                 "categories": fetch_all(conn, "categories"),
                 "locations": fetch_all(conn, "locations"),
                 "items": fetch_public_items(conn),
-                "projects": projects,
+                "projects": fetch_all(conn, "projects"),
                 "project_items": fetch_all(conn, "project_items"),
                 "project_files": fetch_all(conn, "project_files"),
             }

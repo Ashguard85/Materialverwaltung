@@ -1,4 +1,4 @@
-const APP_VERSION = 'v12';
+const APP_VERSION = 'v13';
 const CACHE_PREFIX = 'maker-inventar-pwa-';
 const CACHE_NAME = `${CACHE_PREFIX}${APP_VERSION}`;
 const INDEX_URL = './index.html';
@@ -75,7 +75,7 @@ self.addEventListener('activate', event => {
     const migratingFromV11 = keysBeforeCleanup.includes(`${CACHE_PREFIX}v11`);
     await cleanupOldCaches();
     // One-time compatibility bridge: the v11 client waits for controllerchange
-    // after its legacy SKIP_WAITING message. From v12 onward no claim is used.
+    // after its legacy SKIP_WAITING message. From v13 onward no claim is used.
     if (migratingFromV11) await self.clients.claim();
   })());
 });
@@ -90,7 +90,7 @@ self.addEventListener('message', event => {
   }
   // v11 compatibility bridge: that client only sends SKIP_WAITING after an
   // explicit manual update or its former safe-start path. Keep this only for the
-  // v11 -> v12 transition; v12 clients use ACTIVATE_UPDATE below.
+  // v11 -> v13 transition; v13 clients use ACTIVATE_UPDATE below.
   if (data.type === 'SKIP_WAITING') {
     event.waitUntil(self.skipWaiting());
     return;
